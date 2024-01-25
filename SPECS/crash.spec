@@ -3,8 +3,8 @@
 #
 Summary:              Kernel analysis utility for live systems, netdump, diskdump, kdump, LKCD or mcore dumpfiles
 Name:                 crash
-Version:              8.0.2
-Release:              2%{?dist}
+Version:              8.0.3
+Release:              1%{?dist}
 License:              GPLv3
 Source0:              https://github.com/crash-utility/crash/archive/crash-%{version}.tar.gz
 Source1:              http://ftp.gnu.org/gnu/gdb/gdb-10.2.tar.gz
@@ -18,10 +18,7 @@ Requires:             binutils
 Provides:             bundled(libiberty)
 Provides:             bundled(gdb) = 10.2
 Patch0:               lzo_snappy_zstd.patch
-Patch1:               crash-8.0.2_build.patch
-Patch2:               0001-gdb-Fix-an-assertion-failure-in-the-gdb-s-copy_type.patch
-Patch3:               0002-Fix-for-bt-command-printing-bogus-exception-frame-wa.patch
-Patch4:               0003-Fix-for-bt-command-unnecessarily-printing-an-excepti.patch
+Patch1:               crash-8.0.3_build.patch
 
 %description
 The core analysis suite is a self-contained tool that can be used to
@@ -42,10 +39,7 @@ offered by Mission Critical Linux, or the LKCD kernel patch.
 %prep
 %setup -n %{name}-%{version} -q
 %patch0 -p1 -b lzo_snappy_zstd.patch
-%patch1 -p1 -b crash-8.0.2_build.patch
-%patch2 -p1
-%patch3 -p1
-%patch4 -p1
+%patch1 -p1 -b crash-8.0.3_build.patch
 
 
 %build
@@ -72,6 +66,9 @@ cp -p defs.h %{buildroot}%{_includedir}/crash
 %{_includedir}/*
 
 %changelog
+* Thu May 04 2023 Lianbo Jiang <lijiang@redhat.com> - 8.0.3-1
+- Rebase to upstream crash 8.0.3
+
 * Mon Feb 20 2023 Lianbo Jiang <lijiang@redhat.com> - 8.0.2-2
 - Fix an assertion failure in the gdb's copy_type()
 - Fix for "bt" command printing "bogus exception frame" warning
