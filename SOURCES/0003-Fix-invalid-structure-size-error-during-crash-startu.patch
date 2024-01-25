@@ -1,7 +1,7 @@
 From ec1e61b33a705b8be8d116a541c7b076b0429deb Mon Sep 17 00:00:00 2001
 From: Lianbo Jiang <lijiang@redhat.com>
 Date: Mon, 12 Jun 2023 18:50:05 +0800
-Subject: [PATCH] Fix invalid structure size error during crash startup on
+Subject: [PATCH 3/5] Fix invalid structure size error during crash startup on
  ppc64
 
 The crash utility will fail to start session on ppc64 with the following

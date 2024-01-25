@@ -1,0 +1,38 @@
+From 8986cceb699a27c720b42a9b2456f8e19d5422cd Mon Sep 17 00:00:00 2001
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Mon, 8 May 2023 17:05:49 +0800
+Subject: [PATCH 89/89] gdb-7.6: fix for whatis command causes crash coredump
+
+8ecb59f85679 ("Print non-Ada unions without crashing")
+* cp-abi.c (value_rtti_type): Check HAVE_CPLUS_STRUCT.
+
+This is a RHEL-Only patch.
+
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ gdb-7.6.patch | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/gdb-7.6.patch b/gdb-7.6.patch
+index d0becd055666..f25f5f159e50 100644
+--- a/gdb-7.6.patch
++++ b/gdb-7.6.patch
+@@ -2601,3 +2601,15 @@ diff -up gdb-7.6/opcodes/configure.orig gdb-7.6/opcodes/configure
+ 
+    /* If the nearest symbol is too far away, don't print anything symbolic.  */
+ 
++--- gdb-7.6/gdb/cp-abi.c.orig
+++++ gdb-7.6/gdb/cp-abi.c
++@@ -113,7 +113,8 @@ value_rtti_type (struct value *v, int *full,
++   struct type *ret = NULL;
++   volatile struct gdb_exception e;
++
++-  if ((current_cp_abi.rtti_type) == NULL)
+++  if ((current_cp_abi.rtti_type) == NULL ||
+++               !HAVE_CPLUS_STRUCT (check_typedef (value_type (v))))
++     return NULL;
++   TRY_CATCH (e, RETURN_MASK_ERROR)
++     {
+-- 
+2.37.1
+

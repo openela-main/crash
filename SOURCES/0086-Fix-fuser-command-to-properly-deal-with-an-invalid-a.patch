@@ -1,0 +1,81 @@
+From a83349d6ce9773f151a7f88e032c259f94a2fbde Mon Sep 17 00:00:00 2001
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Mon, 10 Apr 2023 11:41:16 +0800
+Subject: [PATCH 86/89] Fix "fuser" command to properly deal with an invalid
+ argument
+
+The man page of the "fuser" command suggests that the argument can be a
+full pathname or inode address. However, the "fuser" command accepts an
+invalid argument and prints a bogus result as below:
+
+  crash> fuser x
+   PID         TASK        COMM             USAGE
+  100507  ffff9914431f4c80  "packagekitd"    fd
+  100508  ffff991574e59980  "gmain"          fd
+  100509  ffff9914431f3300  "gdbus"          fd
+  102020  ffff991574400000  "sshd"           fd
+  102043  ffff991441d19980  "sshd"           fd
+
+The current fuser command has no checking mechanism to determine if an
+argument is valid or not. Let's add it to handle such cases.
+
+With the patch:
+  crash> fuser x
+  fuser: invalid argument: x
+
+In addition, also add a note that fuser does not expect an argument other
+than an inode address and full pathname, and if others are specified, the
+output can be an unexpected result.
+
+Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+---
+ filesys.c | 8 +++++++-
+ help.c    | 4 ++++
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/filesys.c b/filesys.c
+index d64b54a9b822..1d0ee7f0b24a 100644
+--- a/filesys.c
++++ b/filesys.c
+@@ -3398,6 +3398,7 @@ cmd_fuser(void)
+ 	char fuser_header[BUFSIZE];
+ 	int doing_fds, doing_mmap, len;
+ 	int fuser_header_printed, lockd_header_printed;
++	ulong spec_addr;
+ 
+         while ((c = getopt(argcnt, args, "")) != EOF) {
+                 switch(c)
+@@ -3421,7 +3422,12 @@ cmd_fuser(void)
+ 
+ 	doing_fds = doing_mmap = 0;
+ 	while (args[optind]) {
+-                spec_string = args[optind];
++		spec_string = args[optind];
++		spec_addr = htol(spec_string, RETURN_ON_ERROR|QUIET, NULL);
++		if ((spec_addr == BADADDR || !IS_KVADDR(spec_addr)) &&
++		    spec_string[0] != '/')
++			error(FATAL, "invalid argument: %s\n", args[optind]);
++
+ 		if (STRNEQ(spec_string, "0x") && hexadecimal(spec_string, 0))
+ 			shift_string_left(spec_string, 2);
+ 		len = strlen(spec_string);
+diff --git a/help.c b/help.c
+index 738bbca2e563..26f0d75b8699 100644
+--- a/help.c
++++ b/help.c
+@@ -7996,6 +7996,10 @@ char *help_fuser[] = {
+ "  listed.\n",
+ "    pathname  the full pathname of the file.",
+ "    inode     the hexadecimal inode address for the file.",
++"",
++"  NOTE: This commmand does not expect arguments other than inode address",
++"  or full pathname.  If others are specified, the command may accept them,",
++"  but an unexpected output can be displayed.",
+ "\nEXAMPLES",
+ "  Display the tasks using file /usr/lib/libkfm.so.2.0.0\n",
+ "    %s> fuser /usr/lib/libkfm.so.2.0.0",
+-- 
+2.37.1
+

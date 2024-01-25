@@ -1,0 +1,36 @@
+From a1d0ff0e0d113ada3b4baac25c583be7c96b0950 Mon Sep 17 00:00:00 2001
+From: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date: Tue, 25 Apr 2023 09:31:04 +0900
+Subject: [PATCH 88/89] Fix "net" command on kernel configured with
+ CONFIG_IPV6=m
+
+On a kernel configured with CONFIG_IPV6=m, struct inet6_ifaddr is not
+defined in kernel.  Without the patch, the "net" command fails with the
+following error.
+
+  net: invalid structure member offset: inet6_ifaddr_if_next
+       FILE: net.c  LINE: 1017  FUNCTION: get_device_ip6_address()
+
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+---
+ net.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/net.c b/net.c
+index 18c238be346d..31d3f2bf7c2f 100644
+--- a/net.c
++++ b/net.c
+@@ -996,6 +996,9 @@ get_device_ip6_address(ulong devaddr, char **bufp, long buflen)
+ 		return;
+ 	}
+ 
++	if (INVALID_MEMBER(inet6_ifaddr_if_next))
++		return;
++
+ 	readmem(ip6_ptr + OFFSET(inet6_dev_addr_list), KVADDR,
+ 		&addr, sizeof(void *), "inet6_dev.addr_list", FAULT_ON_ERROR);
+ 
+-- 
+2.37.1
+

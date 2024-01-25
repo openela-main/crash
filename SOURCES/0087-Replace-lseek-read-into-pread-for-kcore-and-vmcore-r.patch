@@ -1,0 +1,115 @@
+From a447ef800c93ab5bbde91a1e7751cf13c2e831fb Mon Sep 17 00:00:00 2001
+From: Tao Liu <ltao@redhat.com>
+Date: Thu, 20 Apr 2023 18:25:22 +0800
+Subject: [PATCH 87/89] Replace lseek/read into pread for kcore and vmcore
+ reading
+
+Previously crash uses lseek/read for kcore and vmcore reading, this involves
+2 syscalls. And we can replace them with pread, only 1 syscall is needed for
+kcore/vmcore reading, and we can have a better performance. Please note there
+are plenty of places in crash using lseek/read, this patch doesn't modify all
+of them, just the most commonly used kcore and diskdump vmcore reading.
+
+Signed-off-by: Tao Liu <ltao@redhat.com>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ diskdump.c | 25 +++++++++++++++++++------
+ netdump.c  | 15 ++++++++++-----
+ 2 files changed, 29 insertions(+), 11 deletions(-)
+
+diff --git a/diskdump.c b/diskdump.c
+index 90e67d7df1db..1f3685cea89e 100644
+--- a/diskdump.c
++++ b/diskdump.c
+@@ -515,16 +515,22 @@ arm_kdump_header_adjust(int header_version)
+ static int
+ read_pd(int fd, off_t offset, page_desc_t *pd)
+ {
+-	const off_t failed = (off_t)-1;
++	int ret;
+ 
+ 	if (FLAT_FORMAT()) {
+ 		if (!read_flattened_format(fd, offset, pd, sizeof(*pd)))
+ 			return READ_ERROR;
+ 	} else {
+-		if (lseek(fd, offset, SEEK_SET) == failed)
++		if (offset < 0) {
++			if (CRASHDEBUG(8))
++				fprintf(fp, "read_pd: invalid offset: %lx\n", offset);
+ 			return SEEK_ERROR;
+-		if (read(fd, pd, sizeof(*pd)) != sizeof(*pd))
++		}
++		if ((ret = pread(fd, pd, sizeof(*pd), offset)) != sizeof(*pd)) {
++			if (ret == -1 && CRASHDEBUG(8))
++				fprintf(fp, "read_pd: pread error: %s\n", strerror(errno));
+ 			return READ_ERROR;
++		}
+ 	}
+ 
+ 	return 0;
+@@ -1125,7 +1131,6 @@ cache_page(physaddr_t paddr)
+ 	off_t seek_offset;
+ 	page_desc_t pd;
+ 	const int block_size = dd->block_size;
+-	const off_t failed = (off_t)-1;
+ 	ulong retlen;
+ #ifdef ZSTD
+ 	static ZSTD_DCtx *dctx = NULL;
+@@ -1190,10 +1195,18 @@ cache_page(physaddr_t paddr)
+ 			return PAGE_INCOMPLETE;
+ 		}
+ 	} else {
+-		if (lseek(dd->dfd, pd.offset, SEEK_SET) == failed)
++		if (pd.offset < 0) {
++			if (CRASHDEBUG(8))
++				fprintf(fp, "read_diskdump/cache_page: invalid offset: %lx\n",
++					pd.offset);
+ 			return SEEK_ERROR;
+-		if (read(dd->dfd, dd->compressed_page, pd.size) != pd.size)
++		}
++		if ((ret = pread(dd->dfd, dd->compressed_page, pd.size, pd.offset)) != pd.size) {
++			if (ret == -1 && CRASHDEBUG(8))
++				fprintf(fp, "read_diskdump/cache_page: pread error: %s\n",
++					strerror(errno));
+ 			return READ_ERROR;
++		}
+ 	}
+ 
+ 	if (pd.flags & DUMP_DH_COMPRESSED_ZLIB) {
+diff --git a/netdump.c b/netdump.c
+index 4ef5807a641b..04a49e5515bb 100644
+--- a/netdump.c
++++ b/netdump.c
+@@ -4336,7 +4336,7 @@ no_nt_prstatus_exists:
+ int
+ read_proc_kcore(int fd, void *bufptr, int cnt, ulong addr, physaddr_t paddr) 
+ {
+-	int i; 
++	int i, ret;
+ 	size_t readcnt;
+ 	ulong kvaddr;
+ 	Elf32_Phdr *lp32;
+@@ -4436,11 +4436,16 @@ read_proc_kcore(int fd, void *bufptr, int cnt, ulong addr, physaddr_t paddr)
+ 	if (offset == UNINITIALIZED)
+ 		return SEEK_ERROR;
+ 
+-        if (lseek(fd, offset, SEEK_SET) != offset)
+-		perror("lseek");
+-
+-	if (read(fd, bufptr, readcnt) != readcnt)
++	if (offset < 0) {
++		if (CRASHDEBUG(8))
++			fprintf(fp, "read_proc_kcore: invalid offset: %lx\n", offset);
++		return SEEK_ERROR;
++	}
++	if ((ret = pread(fd, bufptr, readcnt, offset)) != readcnt) {
++		if (ret == -1 && CRASHDEBUG(8))
++			fprintf(fp, "read_proc_kcore: pread error: %s\n", strerror(errno));
+ 		return READ_ERROR;
++	}
+ 
+ 	return cnt;
+ }
+-- 
+2.37.1
+

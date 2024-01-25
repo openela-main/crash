@@ -1,0 +1,31 @@
+From d39b714d36c12e17c9e3359dd283adbb0693458e Mon Sep 17 00:00:00 2001
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Mon, 8 May 2023 21:51:02 +0800
+Subject: [PATCH] rhel8 freepointer
+
+CONFIG_SLAB_FREELIST_HARDENED=y
+
+This is a RHEL-Only patch.
+
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ memory.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/memory.c b/memory.c
+index 0568f18eb9b7..82d4214be066 100644
+--- a/memory.c
++++ b/memory.c
+@@ -19671,7 +19671,8 @@ freelist_ptr(struct meminfo *si, ulong ptr, ulong ptr_addr)
+ 	if (VALID_MEMBER(kmem_cache_random)) {
+ 		/* CONFIG_SLAB_FREELIST_HARDENED */
+ 
+-		if (vt->flags & FREELIST_PTR_BSWAP)
++		if ((vt->flags & FREELIST_PTR_BSWAP) || machine_type("PPC64")
++			|| machine_type("ARM64") || machine_type("S390X"))
+ 			ptr_addr = (sizeof(long) == 8) ? bswap_64(ptr_addr)
+ 						       : bswap_32(ptr_addr);
+ 		return (ptr ^ si->random ^ ptr_addr);
+-- 
+2.37.1
+

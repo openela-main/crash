@@ -1,0 +1,33 @@
+From ba48bd462728515dd3eed562f1a97125e3417ceb Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Wed, 15 Mar 2023 12:18:48 +0100
+Subject: [PATCH 82/89] xen: fix stacksize
+
+The size of the percpu stack area of Xen on x86_64 is 8 pages, not 2.
+This is the case since Xen commit 0b630aa340ec in 2007.
+
+While not really critical in its current usage, it should be corrected
+nevertheless.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ x86_64.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/x86_64.c b/x86_64.c
+index 86abea00c9d6..619b9f566613 100644
+--- a/x86_64.c
++++ b/x86_64.c
+@@ -8104,7 +8104,7 @@ x86_64_init_hyper(int when)
+                 machdep->pageshift = ffs(machdep->pagesize) - 1;
+                 machdep->pageoffset = machdep->pagesize - 1;
+                 machdep->pagemask = ~((ulonglong)machdep->pageoffset);
+-		machdep->stacksize = machdep->pagesize * 2;
++		machdep->stacksize = machdep->pagesize * 8;
+                 if ((machdep->pgd = (char *)malloc(PAGESIZE())) == NULL)
+                         error(FATAL, "cannot malloc pgd space.");
+ 		if ((machdep->pud = (char *)malloc(PAGESIZE())) == NULL)
+-- 
+2.37.1
+

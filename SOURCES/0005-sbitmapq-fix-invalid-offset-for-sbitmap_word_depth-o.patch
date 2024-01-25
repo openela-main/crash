@@ -1,7 +1,7 @@
-From 3750803f6ae5f5ad071f86ca916dbbb17b7a83a5 Mon Sep 17 00:00:00 2001
+From 0637e7bee77f127ff6a36fc7a9e52408a3106173 Mon Sep 17 00:00:00 2001
 From: Lianbo Jiang <lijiang@redhat.com>
 Date: Mon, 23 May 2022 18:04:16 +0800
-Subject: [PATCH 05/18] sbitmapq: fix invalid offset for "sbitmap_word_depth"
+Subject: [PATCH 05/89] sbitmapq: fix invalid offset for "sbitmap_word_depth"
  on Linux v5.18-rc1
 
 Kernel commit 3301bc53358a ("lib/sbitmap: kill 'depth' from sbitmap_word")
@@ -97,5 +97,5 @@ index 7b318b533702..e8ebd62fe01c 100644
  		scanned += depth;
  		word = w_word & ~w_cleared;
 -- 
-2.30.2
+2.37.1
 

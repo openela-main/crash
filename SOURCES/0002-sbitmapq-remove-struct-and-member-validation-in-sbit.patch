@@ -1,7 +1,7 @@
-From 364b2e413c69daf189d2bc0238e3ba9b0dcbd937 Mon Sep 17 00:00:00 2001
+From d3682a7e57036b226d395541b590ebc460123b04 Mon Sep 17 00:00:00 2001
 From: Lianbo Jiang <lijiang@redhat.com>
 Date: Mon, 23 May 2022 18:04:13 +0800
-Subject: [PATCH 02/18] sbitmapq: remove struct and member validation in
+Subject: [PATCH 02/89] sbitmapq: remove struct and member validation in
  sbitmapq_init()
 
 Let's remove the struct and member validation from sbitmapq_init(), which
@@ -58,5 +58,5 @@ index 96a61e6c2c71..7693eef6cebd 100644
  }
  
 -- 
-2.30.2
+2.37.1
 

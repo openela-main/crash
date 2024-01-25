@@ -1,7 +1,7 @@
-From a295cb40cd5d24fb5995cc78d29c5def3843d285 Mon Sep 17 00:00:00 2001
+From 0242075b6b4321419790f196c405c088394b9462 Mon Sep 17 00:00:00 2001
 From: Lianbo Jiang <lijiang@redhat.com>
 Date: Mon, 23 May 2022 18:04:14 +0800
-Subject: [PATCH 03/18] sbitmapq: fix invalid offset for
+Subject: [PATCH 03/89] sbitmapq: fix invalid offset for
  "sbitmap_queue_alloc_hint" on Linux v5.13-rc1
 
 Kernel commit c548e62bcf6a ("scsi: sbitmap: Move allocation hint
@@ -21,7 +21,7 @@ Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
  3 files changed, 16 insertions(+), 2 deletions(-)
 
 diff --git a/defs.h b/defs.h
-index a6735d07b32f..0aeb98c4f654 100644
+index 984348062bcb..8b4cc38f73bf 100644
 --- a/defs.h
 +++ b/defs.h
 @@ -2168,6 +2168,7 @@ struct offset_table {                    /* stash of commonly-used offsets */
@@ -32,7 +32,7 @@ index a6735d07b32f..0aeb98c4f654 100644
  };
  
  struct size_table {         /* stash of commonly-used sizes */
-@@ -5907,6 +5908,7 @@ struct sbitmap_context {
+@@ -5915,6 +5916,7 @@ struct sbitmap_context {
  	unsigned shift;
  	unsigned map_nr;
  	ulong map_addr;
@@ -101,10 +101,10 @@ index 7693eef6cebd..2921d5447c65 100644
  	MEMBER_OFFSET_INIT(sbitmap_queue_sb, "sbitmap_queue", "sb");
  	MEMBER_OFFSET_INIT(sbitmap_queue_alloc_hint, "sbitmap_queue", "alloc_hint");
 diff --git a/symbols.c b/symbols.c
-index ba5e2741347d..fd0eb06899f0 100644
+index 4afbc227da97..d5ce3e0873a1 100644
 --- a/symbols.c
 +++ b/symbols.c
-@@ -10708,6 +10708,8 @@ dump_offset_table(char *spec, ulong makestruct)
+@@ -10720,6 +10720,8 @@ dump_offset_table(char *spec, ulong makestruct)
  		OFFSET(sbitmap_map_nr));
  	fprintf(fp, "                   sbitmap_map: %ld\n",
  		OFFSET(sbitmap_map));
@@ -114,5 +114,5 @@ index ba5e2741347d..fd0eb06899f0 100644
  		OFFSET(sbitmap_queue_sb));
  	fprintf(fp, "      sbitmap_queue_alloc_hint: %ld\n",
 -- 
-2.30.2
+2.37.1
 

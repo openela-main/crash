@@ -1,0 +1,70 @@
+From 1cebb3d75b45fedc734dac8563782a3e6d86f23b Mon Sep 17 00:00:00 2001
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Thu, 23 Mar 2023 13:18:07 +0800
+Subject: [PATCH 85/89] Fix "vm -M" option to properly deal with an invalid
+ argument
+
+The "vm -M" option can accept an invalid address and print the virtual
+memory data of a task without an error like this:
+
+   crash> vm -M 0xdeadbeef
+   PID: 92960    TASK: ffff99157976cc80  CPU: 0    COMMAND: "crash"
+          MM               PGD          RSS    TOTAL_VM
+   ffff991573bfdf00  ffff9915857f2000  449020k  2427076k
+         VMA           START       END     FLAGS FILE
+   ffff99158718d1c8     400000     4de000 8000071 /home/crash/crash
+   ...
+
+The reasons are
+- htoll() only converts a hexadecimal string to an unsigned long long
+   value and does not evaluate whether it's a valid kernel virtual
+   address or not, and
+- The specified value is used only when the task's mm_struct is NULL.
+
+Also, this behavior is not described enough in its help text, so it's
+confusing for users.
+
+Let's add a check on the converted value regardless of the task's
+mm_struct and add a description of the behavior to its help text.
+
+With the patch:
+   crash> vm -M 0xdeadbeef
+   vm: invalid mm_struct address: 0xdeadbeef
+
+Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+[ kh: rewrote commit message ]
+Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+---
+ help.c   | 1 +
+ memory.c | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/help.c b/help.c
+index 7ceefa06732b..738bbca2e563 100644
+--- a/help.c
++++ b/help.c
+@@ -4701,6 +4701,7 @@ char *help_vm[] = {
+ "                However, if the address can be determined from the kernel stack,",
+ "                it can be entered manually in order to try to resurrect the",
+ "                virtual memory data of the task.",
++"                NOTE: this option is only used when the task's mm_struct is NULL.",
+ "  -R reference  search for references to this number or filename.",
+ "            -m  dump the mm_struct associated with the task.",
+ "            -v  dump all of the vm_area_structs associated with the task.",
+diff --git a/memory.c b/memory.c
+index 592a5ef49d50..0568f18eb9b7 100644
+--- a/memory.c
++++ b/memory.c
+@@ -3559,6 +3559,8 @@ cmd_vm(void)
+ 		case 'M':
+ 			pc->curcmd_private = htoll(optarg, FAULT_ON_ERROR, NULL);
+ 			pc->curcmd_flags |= MM_STRUCT_FORCE;
++			if (!IS_KVADDR(pc->curcmd_private))
++				error(FATAL, "invalid mm_struct address: %s\n", optarg);
+ 			break;
+ 
+ 		case 'f':
+-- 
+2.37.1
+
