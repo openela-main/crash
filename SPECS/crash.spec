@@ -3,122 +3,36 @@
 #
 Summary:              Kernel analysis utility for live systems, netdump, diskdump, kdump, LKCD or mcore dumpfiles
 Name:                 crash
-Version:              7.3.2
-Release:              8%{?dist}
+Version:              8.0.4
+Release:              2%{?dist}
 License:              GPLv3
 Group:                Development/Debuggers
 Source0:              https://github.com/crash-utility/crash/archive/crash-%{version}.tar.gz
-Source1:              http://ftp.gnu.org/gnu/gdb/gdb-7.6.tar.gz
+Source1:              http://ftp.gnu.org/gnu/gdb/gdb-10.2.tar.gz
 URL:                  https://crash-utility.github.io
 ExclusiveOS:          Linux
 ExclusiveArch:        %{ix86} ia64 x86_64 ppc ppc64 s390 s390x %{arm} aarch64 ppc64le
-Buildroot:            %{_tmppath}/%{name}-%{version}-%{release}-buildroot-%(%{__id_u} -n)
-BuildRequires:        ncurses-devel zlib-devel lzo-devel bison snappy-devel wget patch libzstd-devel
+BuildRequires:        ncurses-devel zlib-devel lzo-devel bison snappy-devel wget patch texinfo libzstd-devel
+BuildRequires:        gcc gcc-c++ make
 Requires:             binutils
-Provides:             bundled(gdb) = 7.6
-Patch0:               0001-ppc64-update-the-NR_CPUS-to-8192.patch
-Patch1:               0002-sbitmapq-remove-struct-and-member-validation-in-sbit.patch
-Patch2:               0003-sbitmapq-fix-invalid-offset-for-sbitmap_queue_alloc_.patch
-Patch3:               0004-sbitmapq-fix-invalid-offset-for-sbitmap_queue_round_.patch
-Patch4:               0005-sbitmapq-fix-invalid-offset-for-sbitmap_word_depth-o.patch
-Patch5:               0006-bt-x86_64-filter-out-idle-task-stack.patch
-Patch6:               0007-bt-arm64-add-support-for-bt-n-idle.patch
-Patch7:               0008-Enhance-dev-d-D-options-to-support-blk-mq-sbitmap.patch
-Patch8:               0009-Fix-for-dev-d-D-options-to-support-blk-mq-change-on-.patch
-Patch9:               0010-Doc-update-man-page-for-the-bpf-and-sbitmapq-command.patch
-Patch10:              0011-sbitmapq-Fix-for-sbitmap_queue-without-ws_active-mem.patch
-Patch11:              0012-sbitmapq-Fix-for-sbitmap_word-without-cleared-member.patch
-Patch12:              0013-sbitmapq-Fix-for-sbitmap_queue-without-min_shallow_d.patch
-Patch13:              0014-Make-dev-d-D-options-parse-sbitmap-on-Linux-4.18-and.patch
-Patch14:              0015-sbitmapq-Fix-for-kernels-without-struct-wait_queue_h.patch
-Patch15:              0016-sbitmapq-Limit-kernels-without-sbitmap-again.patch
-Patch16:              0017-Fix-for-dev-command-on-Linux-5.11-and-later.patch
-Patch17:              0018-Extend-field-length-of-task-attributes.patch
-Patch18:              0019-ppc64-fix-bt-for-S-case.patch
-Patch19:              0020-ppc64-dynamically-allocate-h-w-interrupt-stack.patch
-Patch20:              0021-ppc64-rename-ppc64_paca_init-to-ppc64_paca_percpu_of.patch
-Patch21:              0022-ppc64-handle-backtrace-when-CPU-is-in-an-emergency-s.patch
-Patch22:              0023-ppc64-print-emergency-stacks-info-with-mach-command.patch
-Patch23:              0024-ppc64-use-a-variable-for-machdep-machspec.patch
-Patch24:              0025-arm64-Fix-for-st-_stext_vmlinux-not-initialized-when.patch
-Patch25:              0026-Fix-gcc-11-compiler-warnings-on-filesys.c.patch
-Patch26:              0027-Fix-gcc-11-compiler-warning-on-symbols.c.patch
-Patch27:              0028-Fix-gcc-11-compiler-warning-on-makedumpfile.c.patch
-Patch28:              0029-Fix-gcc-11-compiler-warning-on-kvmdump.c.patch
-Patch29:              0030-x86_64-Fix-for-AMD-SME-issue.patch
-Patch30:              0031-Makefile-Fix-unnecessary-re-patching-with-coreutils-.patch
-Patch31:              0032-arm64-use-TCR_EL1_T1SZ-to-get-the-correct-info-if-va.patch
-Patch32:              0033-Fix-task-R-by-adding-end-identifier-for-union-in-tas.patch
-Patch33:              0034-Let-gdb-get-kernel-module-symbols-info-from-crash.patch
-Patch34:              0035-x86_64-Correct-the-identifier-when-locating-the-call.patch
-Patch35:              0036-Add-debian-ubuntu-vmlinux-location-to-default-search.patch
-Patch36:              0037-Fix-gcc-12-compiler-warnings-on-lkcd_-.c.patch
-Patch37:              0038-Fix-for-the-invalid-linux_banner-pointer-issue.patch
-Patch38:              0039-Fix-kmem-failing-to-print-task-context-when-address-.patch
-Patch39:              0040-Fix-page-offset-issue-when-converting-physical-to-vi.patch
-Patch40:              0041-Let-kmem-print-task-context-with-physical-address.patch
-Patch41:              0042-ppc64-still-allow-to-move-on-if-the-emergency-stacks.patch
-Patch42:              0043-Fix-segmentation-fault-in-page_flags_init_from_pagef.patch
-Patch43:              0044-Fix-for-ps-vm-commands-to-display-correct-MEM-and-RS.patch
-Patch44:              0045-ps-Provide-an-option-to-display-no-header-line.patch
-Patch45:              0046-arm64-fix-backtraces-of-KASAN-kernel-dumpfile-trunca.patch
-Patch46:              0047-arm64-handle-vabits_actual-symbol-missing-case.patch
-Patch47:              0048-x86_64-Fix-for-move-of-per-cpu-variables-into-struct.patch
-Patch48:              0049-Fix-for-mm_struct.rss_stat-conversion-into-percpu_co.patch
-Patch49:              0050-Fix-mount-command-to-appropriately-display-the-mount.patch
-Patch50:              0051-Add-RISCV64-framework-code-support.patch
-Patch51:              0052-RISCV64-Make-crash-tool-enter-command-line-and-suppo.patch
-Patch52:              0053-RISCV64-Add-dis-command-support.patch
-Patch53:              0054-RISCV64-Add-irq-command-support.patch
-Patch54:              0055-RISCV64-Add-bt-command-support.patch
-Patch55:              0056-RISCV64-Add-help-r-command-support.patch
-Patch56:              0057-RISCV64-Add-help-m-M-command-support.patch
-Patch57:              0058-RISCV64-Add-mach-command-support.patch
-Patch58:              0059-RISCV64-Add-the-implementation-of-symbol-verify.patch
-Patch59:              0060-SLUB-Fix-for-offset-change-of-struct-slab-members-on.patch
-Patch60:              0061-Fix-for-kmem-i-to-display-correct-SLAB-statistics-on.patch
-Patch61:              0062-Fix-build-failure-due-to-no-EM_RISCV-with-glibc-2.23.patch
-Patch62:              0063-SLAB-Fix-for-kmem-s-S-options-on-Linux-6.1-and-later.patch
-Patch63:              0064-SLAB-Fix-for-kmem-s-S-options-on-Linux-6.2-rc1-and-l.patch
-Patch64:              0065-Port-the-maple-tree-data-structures-and-functions.patch
-Patch65:              0066-Add-maple-tree-support-to-tree-command.patch
-Patch66:              0067-Add-do_maple_tree-for-maple-tree-operations.patch
-Patch67:              0068-Introduce-maple-tree-vma-iteration-to-vm_area_dump.patch
-Patch68:              0069-Update-the-help-text-of-tree-command-for-maple-tree.patch
-Patch69:              0070-Dump-maple-tree-offset-variables-by-help-o.patch
-Patch70:              0071-Fix-for-bt-command-printing-bogus-exception-frame-wa.patch
-Patch71:              0072-Fix-kmem-s-S-not-working-properly-on-RHEL8.6-and-lat.patch
-Patch72:              0073-Fix-for-net-s-option-to-show-IPv6-addresses-on-Linux.patch
-Patch73:              0074-Fix-for-kmem-i-option-to-not-print-invalid-values-fo.patch
-Patch74:              0075-Fix-for-bt-command-unnecessarily-printing-an-excepti.patch
-Patch75:              0076-Fix-for-dis-command-to-correctly-display-the-offset-.patch
-Patch76:              0077-x86_64-Fix-bt-command-on-kernels-with-random_kstack_.patch
-Patch77:              0078-Fix-for-search-u-option-failing-in-maple-tree-kernel.patch
-Patch78:              0079-Enhance-net-command-to-display-IPv6-address-of-netwo.patch
-Patch79:              0080-Fix-for-net-n-option-to-properly-deal-with-an-invali.patch
-Patch80:              0081-Fix-kmem-n-option-to-display-memory-blocks-on-Linux-.patch
-Patch81:              0082-xen-fix-stacksize.patch
-Patch82:              0083-xen-get-stack-address-via-stack_base-array-if-availa.patch
-Patch83:              0084-xen-adjust-to-new-scheduler-structures.patch
-Patch84:              0085-Fix-vm-M-option-to-properly-deal-with-an-invalid-arg.patch
-Patch85:              0086-Fix-fuser-command-to-properly-deal-with-an-invalid-a.patch
-Patch86:              0087-Replace-lseek-read-into-pread-for-kcore-and-vmcore-r.patch
-Patch87:              0088-Fix-net-command-on-kernel-configured-with-CONFIG_IPV.patch
-Patch88:              0089-gdb-7.6-fix-for-whatis-command-causes-crash-coredump.patch
-Patch89:              0001-Fix-kernel-version-macros-for-revision-numbers-over-.patch
-Patch90:              0002-Fix-failure-of-dev-d-D-options-on-Linux-6.4-and-late.patch
-Patch91:              0003-Fix-kmem-v-option-displaying-no-regions-on-Linux-6.3.patch
-Patch92:              0004-arm64-x86_64-Enhance-vtop-command-to-show-zero_pfn-i.patch
-Patch93:              0005-diskdump-netdump-fix-segmentation-fault-caused-by-fa.patch
-Patch94:              0006-Fix-segfault-in-arm64_is_kernel_exception_frame-when.patch
-Patch95:              0001-Output-prompt-when-stdin-is-not-a-TTY.patch
-Patch96:              0002-x86_64-Fix-bt-command-printing-stale-entries-on-Linu.patch
-Patch97:              0003-Fix-invalid-structure-size-error-during-crash-startu.patch
-Patch98:              0004-Revert-Fix-segfault-in-arm64_is_kernel_exception_fra.patch
-Patch99:              0005-arm64-Fix-again-segfault-in-arm64_is_kernel_exceptio.patch
-Patch100:             lzo_snappy_zstd.patch
-Patch101:             rhel8_build.patch
-Patch102:             rhel8-freepointer.patch
+Provides:             bundled(libiberty)
+Provides:             bundled(gdb) = 10.2
+Patch0:               lzo_snappy_zstd.patch
+Patch1:               crash-8.0.4_build.patch
+Patch2:               0001-Fix-rd-command-for-zram-data-display-in-Linux-6.2-an.patch
+Patch3:               0002-Fix-typos-in-offset_table-and-missing-help-o-items.patch
+Patch4:               0003-zram-Fixes-for-lookup_swap_cache.patch
+Patch5:               0004-symbols-expand-all-kernel-module-symtable-if-not-all.patch
+Patch6:               0005-symbols-skip-load-.init.-sections-if-module-was-succ.patch
+Patch7:               0006-use-NR_SWAPCACHE-when-nr_swapper_spaces-isn-t-availa.patch
+Patch8:               0007-Fix-identity_map_base-value-dump-on-S390.patch
+Patch9:               0008-s390x-fix-virtual-vs-physical-address-confusion.patch
+Patch10:              0009-s390x-uncouple-physical-and-virtual-memory-spaces.patch
+Patch11:              0010-RISCV64-Dump-NT_PRSTATUS-in-help-n.patch
+Patch12:              0011-RISCV64-Fix-bt-output-when-no-ra-on-the-stack-top.patch
+Patch13:              0012-arm64-rewrite-the-arm64_get_vmcoreinfo_ul-to-arm64_g.patch
+Patch14:              0013-help.c-Remove-kmem-l-help-messages.patch
+Patch15:              0014-x86_64-check-bt-bptr-before-calculate-framesize.patch
 
 %description
 The core analysis suite is a self-contained tool that can be used to
@@ -139,119 +53,31 @@ offered by Mission Critical Linux, or the LKCD kernel patch.
 
 %prep
 %setup -n %{name}-%{version} -q
-%patch0 -p1
-%patch1 -p1
-%patch2 -p1
-%patch3 -p1
-%patch4 -p1
-%patch5 -p1
-%patch6 -p1
-%patch7 -p1
-%patch8 -p1
-%patch9 -p1
-%patch10 -p1
-%patch11 -p1
-%patch12 -p1
-%patch13 -p1
-%patch14 -p1
-%patch15 -p1
-%patch16 -p1
-%patch17 -p1
-%patch18 -p1
-%patch19 -p1
-%patch20 -p1
-%patch21 -p1
-%patch22 -p1
-%patch23 -p1
-%patch24 -p1
-%patch25 -p1
-%patch26 -p1
-%patch27 -p1
-%patch28 -p1
-%patch29 -p1
-%patch30 -p1
-%patch31 -p1
-%patch32 -p1
-%patch33 -p1
-%patch34 -p1
-%patch35 -p1
-%patch36 -p1
-%patch37 -p1
-%patch38 -p1
-%patch39 -p1
-%patch40 -p1
-%patch41 -p1
-%patch42 -p1
-%patch43 -p1
-%patch44 -p1
-%patch45 -p1
-%patch46 -p1
-%patch47 -p1
-%patch48 -p1
-%patch49 -p1
-%patch50 -p1
-%patch51 -p1
-%patch52 -p1
-%patch53 -p1
-%patch54 -p1
-%patch55 -p1
-%patch56 -p1
-%patch57 -p1
-%patch58 -p1
-%patch59 -p1
-%patch60 -p1
-%patch61 -p1
-%patch62 -p1
-%patch63 -p1
-%patch64 -p1
-%patch65 -p1
-%patch66 -p1
-%patch67 -p1
-%patch68 -p1
-%patch69 -p1
-%patch70 -p1
-%patch71 -p1
-%patch72 -p1
-%patch73 -p1
-%patch74 -p1
-%patch75 -p1
-%patch76 -p1
-%patch77 -p1
-%patch78 -p1
-%patch79 -p1
-%patch80 -p1
-%patch81 -p1
-%patch82 -p1
-%patch83 -p1
-%patch84 -p1
-%patch85 -p1
-%patch86 -p1
-%patch87 -p1
-%patch88 -p1
-%patch89 -p1
-%patch90 -p1
-%patch91 -p1
-%patch92 -p1
-%patch93 -p1
-%patch94 -p1
-%patch95 -p1
-%patch96 -p1
-%patch97 -p1
-%patch98 -p1
-%patch99 -p1
-%patch100 -p1
-%patch101 -p1
-%patch102 -p1
+%patch -P 0 -p1 -b lzo_snappy_zstd.patch
+%patch -P 1 -p1 -b crash-8.0.4_build.patch
+%patch -P 2 -p1
+%patch -P 3 -p1
+%patch -P 4 -p1
+%patch -P 5 -p1
+%patch -P 6 -p1
+%patch -P 7 -p1
+%patch -P 8 -p1
+%patch -P 9 -p1
+%patch -P 10 -p1
+%patch -P 11 -p1
+%patch -P 12 -p1
+%patch -P 13 -p1
+%patch -P 14 -p1
+%patch -P 15 -p1
 
 %build
 cp %{SOURCE1} .
-#make RPMPKG="%{version}-%{release}" CFLAGS="%{optflags}"
-make -j`nproc` RPMPKG="%{version}-%{release}" CFLAGS="%{optflags}" LDFLAGS="%{build_ldflags}"
+make -j`nproc` RPMPKG="%{version}-%{release}" CFLAGS="%{optflags}" CXXFLAGS="%{optflags}" LDFLAGS="%{build_ldflags}"
 
 %install
 rm -rf %{buildroot}
 mkdir -p %{buildroot}%{_bindir}
-make DESTDIR=%{buildroot} install
+%make_install
 mkdir -p %{buildroot}%{_mandir}/man8
 cp -p crash.8 %{buildroot}%{_mandir}/man8/crash.8
 mkdir -p %{buildroot}%{_includedir}/crash
@@ -262,16 +88,26 @@ cp -p defs.h %{buildroot}%{_includedir}/crash
 rm -rf %{buildroot}
 
 %files
-%defattr(-,root,root,-)
 %{_bindir}/crash
 %{_mandir}/man8/crash.8*
 %doc README COPYING3
 
 %files devel
-%defattr(-,root,root,-)
 %{_includedir}/*
 
 %changelog
+* Tue Jan 02 2024 Lianbo Jiang <lijiang@redhat.com> - 8.0.4-2
+- Fix the "dis -lr" not displaying the source file names
+  and line numbers
+- Fix incorrect symbol translation by the 'struct blk_mq_ops'
+
+* Fri Nov 17 2023 Lianbo Jiang <lijiang@redhat.com> - 8.0.4-1
+- Rebase to upstream crash 8.0.4
+
+* Thu Sep 07 2023 Lianbo Jiang <lijiang@redhat.com> - 8.0.3-1
+- Rebase to upstream crash-utility 8.0.3
+- Backport the latest patches from upstream crash-utility
+
 * Thu Jun 15 2023 Lianbo Jiang <lijiang@redhat.com> - 7.3.2-8
 - arm64: Fix again segfault in arm64_is_kernel_exception_frame()
 - Fix invalid structure size error during crash startup on ppc64
