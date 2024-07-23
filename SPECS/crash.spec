@@ -34,6 +34,7 @@ Patch13:              0012-arm64-rewrite-the-arm64_get_vmcoreinfo_ul-to-arm64_g.
 Patch14:              0013-help.c-Remove-kmem-l-help-messages.patch
 Patch15:              0014-x86_64-check-bt-bptr-before-calculate-framesize.patch
 Patch16:              0001-symbols-skip-the-module-if-the-given-address-is-not-.patch
+Patch17:              0001-gdb-fix-p-command-to-print-module-variables-correctl.patch
 
 %description
 The core analysis suite is a self-contained tool that can be used to
@@ -70,6 +71,7 @@ offered by Mission Critical Linux, or the LKCD kernel patch.
 %patch -P 14 -p1
 %patch -P 15 -p1
 %patch -P 16 -p1
+%patch -P 17 -p1
 
 
 %build
@@ -96,6 +98,9 @@ cp -p defs.h %{buildroot}%{_includedir}/crash
 %{_includedir}/*
 
 %changelog
+* Wed Jul 10 2024 Lianbo Jiang <lijiang@redhat.com> - 8.0.4-3.el9_4
+- Fix "p" command to print module variables correctly
+
 * Mon Feb 05 2024 Tao Liu <ltao@redhat.com> - 8.0.4-3
 - Fix bt takes many minutes on some pids in some vmcore
 
