@@ -3,7 +3,7 @@
 #
 Summary:              Kernel analysis utility for live systems, netdump, diskdump, kdump, LKCD or mcore dumpfiles
 Name:                 crash
-Version:              8.0.5
+Version:              8.0.6
 Release:              1%{?dist}
 License:              GPLv3
 Source0:              https://github.com/crash-utility/crash/archive/crash-%{version}.tar.gz
@@ -18,7 +18,7 @@ Requires:             binutils
 Provides:             bundled(libiberty)
 Provides:             bundled(gdb) = 10.2
 Patch0:               lzo_snappy_zstd.patch
-Patch1:               crash-8.0.5_build.patch
+Patch1:               crash-8.0.6_build.patch
 
 %description
 The core analysis suite is a self-contained tool that can be used to
@@ -39,7 +39,7 @@ offered by Mission Critical Linux, or the LKCD kernel patch.
 %prep
 %setup -n %{name}-%{version} -q
 %patch -P 0 -p1 -b lzo_snappy_zstd.patch
-%patch -P 1 -p1 -b crash-8.0.4_build.patch
+%patch -P 1 -p1 -b crash-8.0.6_build.patch
 
 %build
 
@@ -65,6 +65,9 @@ cp -p defs.h %{buildroot}%{_includedir}/crash
 %{_includedir}/*
 
 %changelog
+* Thu Nov 14 2024 Lianbo Jiang <lijiang@redhat.com> - 8.0.6-1
+- Rebase to upstream crash 8.0.6
+
 * Sat May 11 2024 Lianbo Jiang <lijiang@redhat.com> - 8.0.5-1
 - Rebase to upstream crash 8.0.5
 
