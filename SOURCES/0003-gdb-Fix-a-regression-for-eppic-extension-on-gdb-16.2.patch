@@ -1,0 +1,98 @@
+From 6642b2729067399696f8f24f29267b3483d895c6 Mon Sep 17 00:00:00 2001
+From: Tao Liu <ltao@redhat.com>
+Date: Tue, 8 Jul 2025 13:26:38 +1200
+Subject: [PATCH 3/5] gdb: Fix a regression for eppic extension on gdb-16.2
+
+There is a regression found when testing eppic extension on gdb-16.2
+crash:
+
+   crash> cgroup
+   /root/.eppic/cgroup.c : line 99 : Error: undefined variable 'cgroup_roots'
+
+The root cause is when doing gdb upgrading, the replacement of
+gdb_get_datatype() is incorrect:
+
+The original gdb-10.2 version:
+
+   long value = SYMBOL_VALUE(expr->elts[2].symbol);
+
+The incorrect gdb-16.2 replacement:
+
+   long value = value_as_long(expr->evaluate());
+
+According to gdb/tracepoint.c, the correct gdb-16.2 replacement should be:
+
+   symbol *sym;
+   expr::var_value_operation *vvop
+     = (gdb::checked_static_cast<expr::var_value_operation *>
+        (exp->op.get ()));
+   sym = vvop->get_symbol ();
+   long value = sym->value_longest ();
+
+Otherwise, the value_as_long() will throw an exception when trying to
+convert a struct into long, such as "cgroup_roots". The reason why this
+issue only observed on crash extensions, is the faulty code block
+triggered with "req->tcb", which is a callback for gdb_interface(), and
+the callback is used by eppic extension, but the normal crash internal calls
+hardly use it.
+
+After:
+   crash> cgroup
+   0:/user.slice/user-1000.slice/session-2.scope
+
+Signed-off-by: Tao Liu <ltao@redhat.com>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ gdb-16.2.patch | 32 +++++++++++++++++++++++++++++++-
+ 1 file changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/gdb-16.2.patch b/gdb-16.2.patch
+index 151e4e2039d9..9d056580b2f7 100644
+--- a/gdb-16.2.patch
++++ b/gdb-16.2.patch
+@@ -9,7 +9,8 @@
+ # to all subsequent patch applications.
+ 
+ tar xvzmf gdb-16.2.tar.gz \
+-	gdb-16.2/gdb/symfile.c
++	gdb-16.2/gdb/symfile.c \
++	gdb-16.2/gdb/symtab.c
+ 
+ exit 0
+ 
+@@ -1952,3 +1953,32 @@ exit 0
+      }
+ 
+    /* Remember the bfd indexes for the .text, .data, .bss and
++--- gdb-16.2/gdb/symtab.c.orig
+++++ gdb-16.2/gdb/symtab.c
++@@ -7690,7 +7690,11 @@
++                         console("expr->first_opcode(): OP_VAR_VALUE\n");
++                 type = expr->evaluate_type()->type();
++                 if (req->tcb) {
++-                        long value = value_as_long(expr->evaluate());
+++			expr::var_value_operation *vvop
+++			    = (gdb::checked_static_cast<expr::var_value_operation *>
+++			       (expr->op.get ()));
+++			sym = vvop->get_symbol ();
+++			long value = sym->value_longest ();
++                         /* callback with symbol value */
++                         req->typecode = TYPE_CODE(type);
++                         req->tcb(EOP_VALUE, req, &value, 0, 0, 0);
++@@ -7701,8 +7705,12 @@
++                                 req->length = type->length();
++                         }
++                         if (TYPE_CODE(type) == TYPE_CODE_ENUM) {
+++				expr::var_value_operation *vvop
+++				    = (gdb::checked_static_cast<expr::var_value_operation *>
+++				       (expr->op.get ()));
+++				sym = vvop->get_symbol ();
++                                 req->typecode = TYPE_CODE(type);
++-                                req->value = value_as_long(expr->evaluate());
+++                                req->value = sym->value_longest ();
++                                 req->tagname = (char *)TYPE_TAG_NAME(type);
++                                 if (!req->tagname) {
++                                         val = expr->evaluate_type();
+-- 
+2.50.0
+

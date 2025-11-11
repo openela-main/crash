@@ -1,0 +1,42 @@
+From 31a69d378efb4319a5b9ef8cf3d7a93030f5c863 Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Mon, 9 Jun 2025 11:03:02 +0800
+Subject: [PATCH 4/5] Fix crash initialization failure on LoongArch with recent
+ GDB versions
+
+The crash tool failed to initialize on LoongArch64 when using
+GDB 16.2 (and likely other recent GDB versions that have enhanced
+LoongArch support) due to the error:
+"fatal error: buffer size is not enough to fit register value".
+
+This occurs in supply_registers() because GDB now correctly
+reports the size of LoongArch LASX (256-bit) vector registers
+(xr0-xr31) as 32 bytes. The `regval` buffer in `crash_target.c`
+was previously fixed at 16 bytes.
+
+This patch increases the `regval` buffer size to 32 bytes to
+accommodate the largest LoongArch registers reported by GDB.
+This allows crash to initialize successfully.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ crash_target.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/crash_target.c b/crash_target.c
+index ad1480c9188f..49c6e88c5140 100644
+--- a/crash_target.c
++++ b/crash_target.c
+@@ -80,7 +80,7 @@ public:
+ 
+ static void supply_registers(struct regcache *regcache, int regno)
+ {
+-  gdb_byte regval[16];
++  gdb_byte regval[32];
+   struct gdbarch *arch = regcache->arch ();
+   const char *regname = gdbarch_register_name(arch, regno);
+   int regsize = register_size(arch, regno);
+-- 
+2.50.0
+

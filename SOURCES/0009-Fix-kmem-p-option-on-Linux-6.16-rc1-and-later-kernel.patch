@@ -1,0 +1,35 @@
+From 7e8a2796580d992ed19b2e49b5d555e432303e96 Mon Sep 17 00:00:00 2001
+From: "k-hagio-ab@nec.com" <k-hagio-ab@nec.com>
+Date: Tue, 17 Jun 2025 06:08:52 +0000
+Subject: [PATCH 9/9] Fix "kmem -p" option on Linux 6.16-rc1 and later kernels
+
+Kernel commit acc53a0b4c156 ("mm: rename page->index to
+page->__folio_index"), which is contained in Linux 6.16-rc1 and later
+kernels, renamed the member.  Without the patch, the "kmem -p" option
+fails with the following error:
+
+  kmem: invalid structure member offset: page_index
+        FILE: memory.c  LINE: 6016  FUNCTION: dump_mem_map_SPARSEMEM()
+
+Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ memory.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/memory.c b/memory.c
+index 58624bb5f44c..400d31a04cd4 100644
+--- a/memory.c
++++ b/memory.c
+@@ -531,6 +531,8 @@ vm_init(void)
+ 		ASSIGN_OFFSET(page_mapping) = MEMBER_OFFSET("page", "_mapcount") +
+ 			STRUCT_SIZE("atomic_t") + sizeof(ulong);
+         MEMBER_OFFSET_INIT(page_index, "page", "index");
++	if (INVALID_MEMBER(page_index))		/* 6.16 and later */
++		MEMBER_OFFSET_INIT(page_index, "page", "__folio_index");
+ 	if (INVALID_MEMBER(page_index))
+ 		ANON_MEMBER_OFFSET_INIT(page_index, "page", "index");
+         MEMBER_OFFSET_INIT(page_buffers, "page", "buffers");
+-- 
+2.47.1
+

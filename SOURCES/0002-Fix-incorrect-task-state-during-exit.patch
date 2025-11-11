@@ -1,0 +1,84 @@
+From 6eb51d8284aaca9cc882ddb1b9e135c708abbaa4 Mon Sep 17 00:00:00 2001
+From: Stephen Brennan <stephen.s.brennan@oracle.com>
+Date: Fri, 2 May 2025 13:18:17 -0700
+Subject: [PATCH 2/9] Fix incorrect task state during exit
+
+task_state() assumes that exit_state is a unsigned long, when in
+reality, it has been declared as an int since 97dc32cdb1b53 ("reduce
+size of task_struct on 64-bit machines"), in Linux 2.6.22. So on 64-bit
+machines, task_state() reads 8 bytes rather than 4, and gets the wrong
+exit_state value by including the next field.
+
+This has gone unnoticed because directly after exit_state comes
+exit_code, which is generally zero while the task is alive. When the
+exit_code is set, exit_state is usually set not long after. Since
+task_state_string() only checks whether exit_state bits are set, it
+never notices the presence of the exit code inside of the state.
+
+But this leaves open a window during the process exit, when the
+exit_code has been set (in do_exit()), but the exit_state has not (in
+exit_notify()). In this case, crash reports a state of "??", but in
+reality, the task is still running -- it's just running the exit()
+system call. This race window can be long enough to be observed in core
+dumps, for example if the mmput() takes a long time.
+
+This should be considered a bug. A task state of "??" or "(unknown)" is
+frequently of concern when debugging, as it could indicate that the
+state fields had some sort of corruption, and draw the attention of the
+debugger. To handle it properly, record the size of exit_state, and read
+it conditionally as a UINT or ULONG, just like the state. This ensures
+we retain compatibility with kernel before v2.6.22. Whether that is
+actually desirable is anybody's guess.
+
+Reported-by: Jeffery Yoder <jeffery.yoder@oracle.com>
+Signed-off-by: Stephen Brennan <stephen.s.brennan@oracle.com>
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ defs.h |  1 +
+ task.c | 11 +++++++++--
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/defs.h b/defs.h
+index 4cf169c85144..2fdb4db56a05 100644
+--- a/defs.h
++++ b/defs.h
+@@ -2448,6 +2448,7 @@ struct size_table {         /* stash of commonly-used sizes */
+ 	long fred_frame;
+ 	long vmap_node;
+ 	long cpumask_t;
++	long task_struct_exit_state;
+ };
+ 
+ struct array_table {
+diff --git a/task.c b/task.c
+index 3bafe796381f..e07b479a3bec 100644
+--- a/task.c
++++ b/task.c
+@@ -306,6 +306,7 @@ task_init(void)
+ 		MEMBER_SIZE_INIT(task_struct_state, "task_struct", "__state");
+ 	}
+         MEMBER_OFFSET_INIT(task_struct_exit_state, "task_struct", "exit_state");
++        MEMBER_SIZE_INIT(task_struct_exit_state, "task_struct", "exit_state");
+         MEMBER_OFFSET_INIT(task_struct_pid, "task_struct", "pid");
+         MEMBER_OFFSET_INIT(task_struct_comm, "task_struct", "comm");
+         MEMBER_OFFSET_INIT(task_struct_next_task, "task_struct", "next_task");
+@@ -5965,8 +5966,14 @@ task_state(ulong task)
+ 		state = ULONG(tt->task_struct + OFFSET(task_struct_state));
+ 	else
+ 		state = UINT(tt->task_struct + OFFSET(task_struct_state));
+-	exit_state = VALID_MEMBER(task_struct_exit_state) ?
+-		ULONG(tt->task_struct + OFFSET(task_struct_exit_state)) : 0;
++
++	if (VALID_MEMBER(task_struct_exit_state)
++	    && SIZE(task_struct_exit_state) == sizeof(ulong))
++	    exit_state = ULONG(tt->task_struct + OFFSET(task_struct_exit_state));
++	else if (VALID_MEMBER(task_struct_exit_state))
++	    exit_state = UINT(tt->task_struct + OFFSET(task_struct_exit_state));
++	else
++	    exit_state = 0;
+ 
+         return (state | exit_state);
+ }
+-- 
+2.47.1
+
