@@ -1,0 +1,42 @@
+From e906eaca2b1a77fe9f8ba512484b4e914c303f11 Mon Sep 17 00:00:00 2001
+From: Lianbo Jiang <lijiang@redhat.com>
+Date: Wed, 11 Jun 2025 11:19:01 +0800
+Subject: [PATCH 8/9] Fix the issue of "page excluded" messages flooding
+
+The current issue is only observed on PPC64le machine when loading crash,
+E.g:
+  ...
+  crash: page excluded: kernel virtual address: c0000000022d6098  type: "gdb_readmem_callback"
+  crash: page excluded: kernel virtual address: c0000000022d6098  type: "gdb_readmem_callback"
+  ...
+  crash>
+
+And this issue can not be reproduced on crash 8, which only occurred
+after the gdb-16.2 upgrade(see commit dfb2bb55e530).
+
+So far I haven't found out why it always reads the same address(excluded
+page) many times, anyway, crash tool should avoid flooding messages firstly,
+similarly let's use the same debug level(8) such as the read_diskdump()(see
+diskdump.c).
+
+Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+---
+ memory.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/memory.c b/memory.c
+index 0d8d898..58624bb 100644
+--- a/memory.c
++++ b/memory.c
+@@ -2504,7 +2504,7 @@ readmem(ulonglong addr, int memtype, void *buffer, long size,
+ 
+ 		case PAGE_EXCLUDED:
+ 			RETURN_ON_PARTIAL_READ();
+-                        if (PRINT_ERROR_MESSAGE)
++                        if (CRASHDEBUG(8))
+                         	error(INFO, PAGE_EXCLUDED_ERRMSG, memtype_string(memtype, 0), addr, type);
+                         goto readmem_error;
+ 
+-- 
+2.47.0
+
