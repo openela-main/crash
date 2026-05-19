@@ -3,8 +3,8 @@
 #
 Summary:              Kernel analysis utility for live systems, netdump, diskdump, kdump, LKCD or mcore dumpfiles
 Name:                 crash
-Version:              9.0.0
-Release:              4%{?dist}
+Version:              9.0.1
+Release:              1%{?dist}
 License:              GPLv3
 Source0:              https://github.com/crash-utility/crash/archive/crash-%{version}.tar.gz
 Source1:              http://ftp.gnu.org/gnu/gdb/gdb-16.2.tar.gz
@@ -18,22 +18,7 @@ Requires:             binutils
 Provides:             bundled(libiberty)
 Provides:             bundled(gdb) = 16.2
 Patch0:               lzo_snappy_zstd.patch
-Patch1:               crash-9.0.0_build.patch
-Patch2:               0001-vmware_guestdump-Version-7-support.patch
-Patch3:               0002-Fix-incorrect-task-state-during-exit.patch
-Patch4:               0003-Add-multi-threads-support-in-crash-target.patch
-Patch5:               0004-Call-cmd_bt-silently-after-set-pid.patch
-Patch6:               0005-x86_64-Add-gdb-multi-stack-unwind-support.patch
-Patch7:               0006-arm64-Add-gdb-multi-stack-unwind-support.patch
-Patch8:               0007-ppc64-Add-gdb-multi-stack-unwind-support.patch
-Patch9:               0008-Fix-the-issue-of-page-excluded-messages-flooding.patch
-Patch10:              0009-Fix-kmem-p-option-on-Linux-6.16-rc1-and-later-kernel.patch
-Patch11:              0001-x86_64-filter-unwanted-warning-message-for-bt-T-cmd.patch
-Patch12:              0002-doc-Update-requirements-for-building-on-Fedora.patch
-Patch13:              0003-gdb-Fix-a-regression-for-eppic-extension-on-gdb-16.2.patch
-Patch14:              0004-Fix-crash-initialization-failure-on-LoongArch-with-r.patch
-Patch15:              0005-gdb-Disable-DT_DEBUG-lookup-by-GDB-inside-the-vmcore.patch
-Patch16:              0001-Add-blk_mq-shared-tags-support-for-dev-d-D.patch
+Patch1:               crash-9.0.1_build.patch
 
 %description
 The core analysis suite is a self-contained tool that can be used to
@@ -54,22 +39,7 @@ offered by Mission Critical Linux, or the LKCD kernel patch.
 %prep
 %setup -n %{name}-%{version} -q
 %patch -P 0 -p1 -b lzo_snappy_zstd.patch
-%patch -P 1 -p1 -b crash-9.0.0_build.patch
-%patch -P 2 -p1
-%patch -P 3 -p1
-%patch -P 4 -p1
-%patch -P 5 -p1
-%patch -P 6 -p1
-%patch -P 7 -p1
-%patch -P 8 -p1
-%patch -P 9 -p1
-%patch -P 10 -p1
-%patch -P 11 -p1
-%patch -P 12 -p1
-%patch -P 13 -p1
-%patch -P 14 -p1
-%patch -P 15 -p1
-%patch -P 16 -p1
+%patch -P 1 -p1 -b crash-9.0.1_build.patch
 
 %build
 
@@ -95,6 +65,9 @@ cp -p defs.h %{buildroot}%{_includedir}/crash
 %{_includedir}/*
 
 %changelog
+* Fri Nov 21 2025 Lianbo Jiang <lijiang@redhat.com> - 9.0.1-1
+- Rebase to upstream crash 9.0.1
+
 * Wed Aug 6 2025 Tao Liu <ltao@redhat.com> - 9.0.0-4
 - Add blk_mq shared tags support for dev -d/-D
 
