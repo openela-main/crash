@@ -1,0 +1,152 @@
+From 488777428c96d73964e659a3a6c229502f85d74d Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Tue, 16 Jun 2026 20:47:42 +0800
+Subject: [PATCH 25/39] LoongArch64: resolve relocated exception vector
+ addresses
+
+LoongArch copies exception entry code to the exception_handlers area and,
+on SMP systems, may execute vectors from per-cpu pcpu_handlers.  A PC
+saved while running copied exception code therefore does not necessarily
+match the canonical symbol address in vmlinux.
+
+Crash currently looks up those runtime addresses directly.  That can
+leave frames such as handle_vint unresolved and prevents exception-frame
+handling from identifying the interrupted context reliably.
+
+Translate PCs in the relocated exception vector range back to their
+canonical handler addresses before symbol lookup.  Follow the kernel
+layout by folding per-cpu handler addresses back to eentry, computing the
+vector type and offset, mapping normal exceptions through
+exception_table[], and mapping interrupt vectors to handle_vint.
+
+The per-cpu handler mapping is optional and exists only for NUMA non-RT
+kernels.  When pcpu_handlers is absent, the normal eentry mapping still
+covers the boot-time exception handler area.
+
+Co-developed-by: Xianglai Li <lixianglai@loongson.cn>
+Signed-off-by: Xianglai Li <lixianglai@loongson.cn>
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 78 ++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 77 insertions(+), 1 deletion(-)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index 830c81826ebd..0b108e062b2e 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -43,6 +43,11 @@ struct loongarch64_unwind_frame {
+         unsigned long ra;
+ };
+ 
++#define LOONGARCH64_VECSIZE		0x200
++#define LOONGARCH64_EXCEPTION_VECTOR_NUM 128
++#define LOONGARCH64_EXCCODE_INT_START	64
++#define LOONGARCH64_EXCCODE_INT_END	78
++
+ static int loongarch64_pgd_vtop(ulong *pgd, ulong vaddr,
+ 			physaddr_t *paddr, int verbose);
+ static int loongarch64_uvtop(struct task_context *tc, ulong vaddr,
+@@ -64,6 +69,7 @@ static void loongarch64_dump_backtrace_entry(struct bt_info *bt,
+ 			struct loongarch64_unwind_frame *previous, int level);
+ static void loongarch64_dump_exception_stack(struct bt_info *bt, char *pt_regs);
+ static int loongarch64_is_exception_entry(struct syment *sym);
++static ulong loongarch64_exception_pc(int cpu, ulong pc);
+ static int loongarch64_eframe_search(struct bt_info *bt);
+ static void loongarch64_display_full_frame(struct bt_info *bt,
+ 			struct loongarch64_unwind_frame *current,
+@@ -466,6 +472,9 @@ loongarch64_back_trace_cmd(struct bt_info *bt)
+ 		struct syment *symbol = NULL;
+ 		ulong offset;
+ 
++		current.pc = loongarch64_exception_pc(bt->tc->processor,
++		    current.pc);
++
+ 		if (CRASHDEBUG(8))
+ 			fprintf(fp, "level %d pc %#lx ra %#lx sp %lx\n",
+ 				level, current.pc, current.ra, current.sp);
+@@ -687,7 +696,8 @@ loongarch64_dump_exception_stack(struct bt_info *bt, char *pt_regs)
+ 			regs->regs[i+2], regs->regs[i+3]);
+ 	}
+ 
+-	value_to_symstr(regs->csr_epc, buf, 16);
++	value_to_symstr(loongarch64_exception_pc(bt->tc->processor,
++	    regs->csr_epc), buf, 16);
+ 	fprintf(fp, "    era      : %016lx %s\n", regs->csr_epc, buf);
+ 
+ 	value_to_symstr(regs->regs[LOONGARCH64_EF_RA], buf, 16);
+@@ -735,6 +745,72 @@ loongarch64_is_exception_entry(struct syment *sym)
+ 		STREQ(sym->name, "handle_lasx");
+ }
+ 
++static ulong
++loongarch64_exception_pc(int cpu, ulong pc)
++{
++	ulong eentry, pcpu_handler, offset, type, func;
++	ulong exception_table, exception_handlers;
++	int i;
++
++	if (!IS_KVADDR(pc) || !symbol_exists("exception_handlers"))
++		return pc;
++
++	exception_handlers = symbol_value("exception_handlers");
++	eentry = exception_handlers;
++	if (symbol_exists("eentry"))
++		readmem(symbol_value("eentry"), KVADDR, &eentry, sizeof(eentry),
++		    "LoongArch eentry", RETURN_ON_ERROR|QUIET);
++
++	/*
++	 * pcpu_handlers exists only for NUMA non-RT kernels.  When absent,
++	 * the boot-time eentry/exception_handlers mapping below is still valid.
++	 */
++	if (symbol_exists("pcpu_handlers")) {
++		for (i = 0; i < kt->cpus; i++) {
++			if (cpu >= 0 && cpu < kt->cpus && i != cpu)
++				continue;
++			if (!readmem(symbol_value("pcpu_handlers") +
++			    (i * sizeof(ulong)), KVADDR, &pcpu_handler,
++			    sizeof(pcpu_handler), "LoongArch pcpu_handlers",
++			    RETURN_ON_ERROR|QUIET))
++				continue;
++			if (!pcpu_handler)
++				continue;
++			if (pc >= pcpu_handler &&
++			    pc < pcpu_handler + LOONGARCH64_VECSIZE *
++			    LOONGARCH64_EXCEPTION_VECTOR_NUM) {
++				pc = pc + eentry - pcpu_handler;
++				break;
++			}
++		}
++	}
++
++	if (pc < eentry || pc >= eentry + LOONGARCH64_EXCCODE_INT_END * LOONGARCH64_VECSIZE)
++		return pc;
++
++	offset = (pc - eentry) % LOONGARCH64_VECSIZE;
++	type = (pc - eentry) / LOONGARCH64_VECSIZE;
++
++	if (type < LOONGARCH64_EXCCODE_INT_START &&
++	    symbol_exists("exception_table")) {
++		exception_table = symbol_value("exception_table");
++		if (!readmem(exception_table + (type * sizeof(ulong)), KVADDR,
++		    &func, sizeof(func), "LoongArch exception_table",
++		    RETURN_ON_ERROR|QUIET))
++			func = 0;
++	} else if (type >= LOONGARCH64_EXCCODE_INT_START &&
++	    type <= LOONGARCH64_EXCCODE_INT_END &&
++	    symbol_exists("handle_vint")) {
++		func = symbol_value("handle_vint");
++	} else if (symbol_exists("handle_reserved")) {
++		func = symbol_value("handle_reserved");
++	} else {
++		func = 0;
++	}
++
++	return func ? func + offset : pc;
++}
++
+ /*
+  * 'bt -f' commend output
+  * Display all stack data contained in a frame
+-- 
+2.54.0
+

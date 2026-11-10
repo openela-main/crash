@@ -1,0 +1,49 @@
+From bf279fbd474f1f0c8783e0a0c5589d1bc0d7a16b Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Tue, 16 Jun 2026 20:47:41 +0800
+Subject: [PATCH 24/39] LoongArch64: print exception return address as ERA
+
+LoongArch saves the exception return address in CSR.ERA.  The crash
+LoongArch64 code currently labels this field as EPC in register and
+exception-frame output.  That is misleading when comparing crash output
+with the architecture documentation and the kernel pt_regs layout.
+
+Rename the displayed field to ERA and fix the CSR.EUEN label while
+updating the same output block.  This is a display-only change and does
+not alter how the saved exception return address is collected or used by
+the unwinder.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index b0ebf8b1d99e..830c81826ebd 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -688,7 +688,7 @@ loongarch64_dump_exception_stack(struct bt_info *bt, char *pt_regs)
+ 	}
+ 
+ 	value_to_symstr(regs->csr_epc, buf, 16);
+-	fprintf(fp, "    epc      : %016lx %s\n", regs->csr_epc, buf);
++	fprintf(fp, "    era      : %016lx %s\n", regs->csr_epc, buf);
+ 
+ 	value_to_symstr(regs->regs[LOONGARCH64_EF_RA], buf, 16);
+ 	fprintf(fp, "    ra       : %016lx %s\n", regs->regs[LOONGARCH64_EF_RA], buf);
+@@ -1346,10 +1346,10 @@ loongarch64_display_regs_from_elf_notes(int cpu, FILE *ofp)
+ 		"    R24: %016lx  R25: %016lx  R26: %016lx\n"
+ 		"    R27: %016lx  R28: %016lx  R29: %016lx\n"
+ 		"    R30: %016lx  R31: %016lx\n"
+-		"    CSR epc : %016lx    CSR badv: %016lx\n"
++		"    CSR era : %016lx    CSR badv: %016lx\n"
+ 		"    CSR crmd: %08lx            CSR prmd: %08lx\n"
+ 		"    CSR ecfg: %08lx           CSR estat: %08lx\n"
+-		"    CSR eneu: %08lx",
++		"    CSR euen: %08lx",
+ 		regs->regs[LOONGARCH64_EF_R0],
+ 		regs->regs[LOONGARCH64_EF_R0 + 1],
+ 		regs->regs[LOONGARCH64_EF_R0 + 2],
+-- 
+2.54.0
+

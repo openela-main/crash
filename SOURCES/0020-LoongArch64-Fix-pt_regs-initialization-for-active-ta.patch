@@ -1,0 +1,31 @@
+From a6817d475c753f44d10bd5709be1d455768d496a Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Thu, 4 Jun 2026 19:52:41 +0800
+Subject: [PATCH 20/39] LoongArch64: Fix pt_regs initialization for active
+ tasks
+
+The offset of pt_regs.regs was missing, which prevented crash from
+falling back to real-time CPU registers for the active task. Initialize
+it correctly during architecture initialization.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index 5adb7d8038db..92481f3235b6 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -761,6 +761,8 @@ loongarch64_stackframe_init(void)
+ 
+ 	ASSIGN_OFFSET(task_struct_thread_reg03) =
+ 		task_struct_thread + thread_reg03_sp;
++	MEMBER_OFFSET_INIT(pt_regs_regs, "pt_regs", "regs");
++	STRUCT_SIZE_INIT(pt_regs, "pt_regs");
+ 	ASSIGN_OFFSET(task_struct_thread_reg01) =
+ 		task_struct_thread + thread_reg01_ra;
+ 
+-- 
+2.54.0
+

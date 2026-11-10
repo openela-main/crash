@@ -1,0 +1,115 @@
+From 32ac79ead77839e6a87657edfdccffa943c6ea19 Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Thu, 4 Jun 2026 19:52:40 +0800
+Subject: [PATCH 19/39] LoongArch64: Fix CPU registers reading from dump notes
+
+LoongArch stores the register set exported in NT_PRSTATUS as an
+elf_gregset_t.  The special registers are laid out as orig_a0, csr_era,
+csr_badvaddr, csr_crmd, csr_prmd, csr_euen, csr_ecfg and csr_estat
+after the 32 GPRs.
+
+The old crash-local register layout put csr_crmd at the first
+special-register slot and placed epc near the end.  That made help -r
+and active-task unwinding read nonsensical CSR values from dump notes.
+
+Match the local register structure and indexes to the kernel
+pt_regs/elf_gregset_t layout.  Also handle modern kernels where
+crash_notes may refer to the per-cpu note storage directly, and use
+NETDUMP ELF notes for libvirt/QEMU dump files when crash_notes does not
+provide usable data.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 38 +++++++++++++++++++++++---------------
+ 1 file changed, 23 insertions(+), 15 deletions(-)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index 6437c4aa4656..5adb7d8038db 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -18,20 +18,23 @@
+ #include <elf.h>
+ #include "defs.h"
+ 
+-/* from arch/loongarch/include/asm/ptrace.h */
++/*
++ * This matches the beginning of both kernel struct pt_regs and the
++ * elf_gregset_t layout exported in NT_PRSTATUS notes.
++ */
+ struct loongarch64_pt_regs {
+ 	/* Saved main processor registers. */
+ 	unsigned long regs[32];
+ 
+ 	/* Saved special registers. */
++	unsigned long orig_a0;
++	unsigned long csr_epc;
++	unsigned long csr_badvaddr;
+ 	unsigned long csr_crmd;
+ 	unsigned long csr_prmd;
+ 	unsigned long csr_euen;
+ 	unsigned long csr_ecfg;
+ 	unsigned long csr_estat;
+-	unsigned long csr_epc;
+-	unsigned long csr_badvaddr;
+-	unsigned long orig_a0;
+ };
+ 
+ struct loongarch64_unwind_frame {
+@@ -108,13 +111,14 @@ typedef struct { ulong pte; } pte_t;
+ #define LOONGARCH64_EF_RA		1
+ #define LOONGARCH64_EF_SP		3
+ #define LOONGARCH64_EF_FP		22
+-#define LOONGARCH64_EF_CSR_EPC		32
+-#define LOONGARCH64_EF_CSR_BADVADDR	33
+-#define LOONGARCH64_EF_CSR_CRMD		34
+-#define LOONGARCH64_EF_CSR_PRMD		35
+-#define LOONGARCH64_EF_CSR_EUEN		36
+-#define LOONGARCH64_EF_CSR_ECFG		37
+-#define LOONGARCH64_EF_CSR_ESTAT	38
++#define LOONGARCH64_EF_ORIG_A0		32
++#define LOONGARCH64_EF_CSR_EPC		33
++#define LOONGARCH64_EF_CSR_BADVADDR	34
++#define LOONGARCH64_EF_CSR_CRMD		35
++#define LOONGARCH64_EF_CSR_PRMD		36
++#define LOONGARCH64_EF_CSR_EUEN		37
++#define LOONGARCH64_EF_CSR_ECFG		38
++#define LOONGARCH64_EF_CSR_ESTAT	39
+ 
+ static struct machine_specific loongarch64_machine_specific = { 0 };
+ 
+@@ -911,8 +915,12 @@ loongarch64_get_crash_notes(void)
+ 		/*
+ 		 * Add __per_cpu_offset for each cpu to form the pointer to the notes
+ 		 */
+-		for (i = 0; i < kt->cpus; i++)
+-			notes_ptrs[i] = notes_ptrs[kt->cpus-1] + kt->__per_cpu_offset[i];
++		for (i = 0; i < kt->cpus; i++) {
++			if (IS_KVADDR(notes_ptrs[kt->cpus-1]))
++				notes_ptrs[i] = notes_ptrs[kt->cpus-1] + kt->__per_cpu_offset[i];
++			else
++				notes_ptrs[i] = crash_notes + kt->__per_cpu_offset[i];
++		}
+ 	}
+ 
+ 	buf = GETBUF(SIZE(note_buf));
+@@ -1009,7 +1017,7 @@ loongarch64_get_elf_notes(void)
+ 	struct machine_specific *ms = machdep->machspec;
+ 	int i;
+ 
+-	if (!DISKDUMP_DUMPFILE() && !KDUMP_DUMPFILE())
++	if (!DISKDUMP_DUMPFILE() && !KDUMP_DUMPFILE() && !NETDUMP_DUMPFILE())
+ 		return FALSE;
+ 
+ 	panic_task_regs = calloc(kt->cpus, sizeof(*panic_task_regs));
+@@ -1022,7 +1030,7 @@ loongarch64_get_elf_notes(void)
+ 
+ 		if (DISKDUMP_DUMPFILE())
+ 			note = diskdump_get_prstatus_percpu(i);
+-		else if (KDUMP_DUMPFILE())
++		else if (KDUMP_DUMPFILE() || NETDUMP_DUMPFILE())
+ 			note = netdump_get_prstatus_percpu(i);
+ 
+ 		if (!note) {
+-- 
+2.54.0
+

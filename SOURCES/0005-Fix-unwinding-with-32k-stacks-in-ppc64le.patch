@@ -1,0 +1,103 @@
+From 5da4d159a5efec95988349abfa12050dfc6578a6 Mon Sep 17 00:00:00 2001
+From: Lucas Oakley <soakley@redhat.com>
+Date: Wed, 6 May 2026 09:26:51 -0400
+Subject: [PATCH 05/39] Fix unwinding with 32k stacks in ppc64le
+
+With commit 18f14afe2816 ("powerpc/64s: Increase default stack
+size to 32KB") in upstream ppc64le, the stack size was adjusted
+from 16k to 32k. As a result, ppc64_back_trace() can bail
+prematurely when checking if the stack pointer exists in the
+range of the range of the irq stacks, since SIZE(irq_ctx), used
+in ppc64_in_irqstack(), is set to 16k. This patch ensures that
+irq_ctx is updated to 32k if a 32k stack size is used.
+
+Tested against:
+el6    x86_64
+el7    ppc64le s390x x86_64
+el8    aarch64 ppc64le s390x x86_64
+el9    aarch64 ppc64le s390x x86_64
+el10   aarch64 ppc64le s390x x86_64
+
+Without the commit:
+
+crash> bt -c 3
+PID: 17524    TASK: c0000000b2c0e400  CPU: 3    COMMAND: "xyz"
+cannot find the stack info.
+
+With the commit:
+
+crash> bt -c 3
+PID: 17524    TASK: c0000000b2c0e400  CPU: 3    COMMAND: "xyz"
+ #0 [c000001dff7d7c10] smp_call_function_single_async at c00000000028dd38
+ #1 [c000001dff7d7d30] _raw_spin_lock_irqsave at c000000001023f1c
+ #2 [c000001dff7d7d60] ibmvscsi_handle_crq at c0080000044635ec [ibmvscsi]
+ #3 [c000001dff7d7de0] ibmvscsi_task at c008000004463804 [ibmvscsi]
+ #4 [c000001dff7d7e30] tasklet_action_common.constprop.0 at c0000000001624cc
+ #5 [c000001dff7d7e90] __do_softirq at c0000000010244cc
+ #6 [c000001dff7d7f90] do_softirq_own_stack at c000000000016480
+ #7 [c000000140d67700] __irq_exit_rcu at c0000000001613b8
+ #8 [c000000140d67730] irq_exit at c000000000162170
+ #9 [c000000140d67750] do_IRQ at c000000000015fa4
+ #10 [c000000140d67780] hardware_interrupt_common_virt at c000000000009080
+ Hardware Interrupt [500] exception frame:
+ R0:  c000000001023de0    R1:  c000000140d67a90    R2:  c000000002c02500
+ R3:  c00800000b30269c    R4:  0000000000000001    R5:  0000000000000001
+ R6:  ffffffffffffffff    R7:  0000000000000000    R8:  0000000000000000
+ R9:  fffffffffffe0000    R10: 0000000000000002    R11: 0000000048422824
+ R12: c000000001023d70    R13: c000001dffffd480    R14: 00007ffd6ef6d238
+ R15: 0000000000000028    R16: c000001dfc1e2280    R17: c000001dfc1e2280
+ R18: 00000000ab97fa48    R19: 0000000000000000    R20: 0000000000000001
+ R21: 0000001df9ff0000    R22: 0000000000000028    R23: c0000000021f2280
+ R24: 0000000000000000    R25: c0000000021f2280    R26: c0000000021f2380
+ R27: 0000000000000000    R28: c00800000b30269c    R29: 0000000000000000
+ R30: c000000002c47190    R31: 000000000020000b
+ NIP: c0000000000aea14    MSR: 800000000280b033    OR3: c0000000000ae944
+ CTR: c000000001023d70    LR:  c000000001023de0    XER: 0000000020040001
+ CCR: 0000000088422824    MQ:  0000000000000000    DAR: 0000000000000001
+ DSISR: c0080000073b1e94     Syscall Result: 0000000000000000
+ [NIP  : queued_spin_lock_slowpath+1204]
+ [LR   : _raw_spin_lock+112]
+ #11 [c000000140d67a90] queued_spin_lock_slowpath at c0000000000aea14
+ #12 [c000000140d67bb0] _raw_spin_lock at c000000001023de0  (unreliable)
+ #13 [c000000140d67bd0] dm_blk_close at c00800000b2c6850 [dm_mod]
+ #14 [c000000140d67c00] blkdev_put_whole at c0000000007d2738
+ #15 [c000000140d67c30] bdev_release at c0000000007d3a38
+ #16 [c000000140d67c90] blkdev_release at c0000000007d4224
+ #17 [c000000140d67cb0] __fput at c0000000005d2e98
+ #18 [c000000140d67d00] task_work_run at c00000000018fb14
+ #19 [c000000140d67d50] do_notify_resume at c000000000020bd4
+ #20 [c000000140d67d80] interrupt_exit_user_prepare_main at c00000000002ed98
+ #21 [c000000140d67de0] syscall_exit_prepare at c00000000002f240
+ #22 [c000000140d67e10] system_call_vectored_common at c00000000000bff4
+
+Signed-off-by: Lucas Oakley <soakley@redhat.com>
+---
+ task.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/task.c b/task.c
+index ec04b556c337..d7f3c129a709 100644
+--- a/task.c
++++ b/task.c
+@@ -739,6 +739,18 @@ irqstacks_init(void)
+ 	if (!(tt->softirq_tasks = (ulong *)calloc(NR_CPUS, sizeof(ulong))))
+ 		error(FATAL, "cannot malloc softirq_tasks space.");
+ 
++	/*
++	 *  With the stack size adjusted from 16k to 32k for ppc64le,
++	 *  such as rhel-9.4.z. We need to ensure that SIZE(irq_ctx) is
++	 *  correctly set so the unwinder doesn't prematurely bail
++	 *  when switching between the kernel stack and irq stacks.
++	 *  The stack size is updated in task_init(), which calls
++	 *  this routine, irqstacks_init() after checking for the
++	 *  existence of irq_ctx.
++	 */
++	if (STACKSIZE() > SIZE(irq_ctx))
++		ASSIGN_SIZE(irq_ctx) = STACKSIZE();
++
+ 	thread_info_buf = GETBUF(SIZE(irq_ctx));
+ 
+ 	if ((hard_sp = per_cpu_symbol_search("per_cpu__hardirq_ctx")) ||
+-- 
+2.54.0
+

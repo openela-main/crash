@@ -1,0 +1,21 @@
+From 89d36e12d7b753028038dfb93068fdfd0f6f1501 Mon Sep 17 00:00:00 2001
+From: Tao Liu <ltao@redhat.com>
+Date: Fri, 24 Apr 2026 15:15:19 +1200
+Subject: [PATCH 02/39] Mark start of 9.0.3 development phase with version
+ 9.0.2++
+
+Signed-off-by: Tao Liu <ltao@redhat.com>
+---
+ .rh_rpm_package | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.rh_rpm_package b/.rh_rpm_package
+index 3beeadd423d3..a3cb14a5a842 100644
+--- a/.rh_rpm_package
++++ b/.rh_rpm_package
+@@ -1 +1 @@
+-9.0.2
++9.0.2++
+-- 
+2.54.0
+

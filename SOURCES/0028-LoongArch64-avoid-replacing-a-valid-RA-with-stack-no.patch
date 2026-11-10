@@ -1,0 +1,51 @@
+From a35fcc79393cbe84dbf00b663a3be705efb256e0 Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Tue, 16 Jun 2026 20:47:45 +0800
+Subject: [PATCH 28/39] LoongArch64: avoid replacing a valid RA with stack
+ noise
+
+The fallback prologue scanner may find a saved RA slot and read a word
+from the stack.  In corrupted, interrupted, or partially unwound frames,
+that word is not guaranteed to be a kernel return address.
+
+Do not blindly replace the current RA with the scanned stack value.  Keep
+the existing RA unless the scanned value is a kernel address, or unless
+the current RA is already not a kernel address.  This keeps the fallback
+scanner from discarding a better caller candidate with obvious stack
+noise.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 16 +++++++++++-----
+ 1 file changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index c25a3bbf6d6c..34e29c9f2d67 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -702,11 +702,17 @@ loongarch64_analyze_function(ulong start, ulong offset,
+ 
+ 	previous->sp = current->sp + spadjust;
+ 
+-	if (rapos && !readmem(rapos, KVADDR, &current->ra,
+-			      sizeof(current->ra), "RA from stack",
+-			      RETURN_ON_ERROR)) {
+-		error(FATAL, "Cannot read RA from stack %lx", rapos);
+-		return;
++	if (rapos) {
++		ulong ra;
++
++		if (!readmem(rapos, KVADDR, &ra, sizeof(ra), "RA from stack",
++		    RETURN_ON_ERROR)) {
++			error(FATAL, "Cannot read RA from stack %lx", rapos);
++			return;
++		}
++
++		if (IS_KVADDR(ra) || !IS_KVADDR(current->ra))
++			current->ra = ra;
+ 	}
+ }
+ 
+-- 
+2.54.0
+

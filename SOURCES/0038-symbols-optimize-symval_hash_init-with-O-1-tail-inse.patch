@@ -1,0 +1,88 @@
+From 08e9d02d2c46011d1565a3bedf33c66f07cf8bde Mon Sep 17 00:00:00 2001
+From: Rui Qi <qirui.001@bytedance.com>
+Date: Mon, 10 Aug 2026 11:30:23 +0800
+Subject: [PATCH 38/39] symbols: optimize symval_hash_init with O(1) tail
+ insertion
+
+Replace the O(n) tail traversal with O(1) tail insertion using a
+dynamically-allocated per-bucket tail tracking array. The original code
+traversed the entire linked list on every insert to find the tail,
+resulting in O(n^2) complexity for hash table initialization.
+
+This reduces hash table initialization from O(n^2) to O(n).
+
+Benchmark on an x86_64 machine (kernel 5.10.135, ~112k symbols):
+
+  Before:  5.54 s (mean, n=6, sigma=0.12)
+  After:   5.31 s (mean, n=6, sigma=0.12)
+  Speedup: 1.04x (-4.1%)
+
+Benchmark on an ARM64 Neoverse-N2 machine (kernel 5.15.152 arm64,
+~132k nm symbols):
+
+  Before:  3.4113 s (mean, n=48, sigma=0.0698)
+  After:   2.5073 s (mean, n=48, sigma=0.0394)
+  Speedup: 1.36x (-26.5%), with improved consistency.
+  User CPU: 4.1706 s -> 3.2768 s (-21.4%).
+
+Benchmark retest on a RISC-V machine (kernel
+6.12.13 riscv64, ~198k nm symbols):
+
+  $ printf 'q\n' | ./crash vmlinux /proc/kcore
+
+  Before:  11.934 s (mean, n=3, sigma=0.880; samples: 12.921, 11.231, 11.651)
+  After:   10.255 s (mean, n=3, sigma=0.835; samples: 11.131, 9.467, 10.168)
+  Speedup: 1.16x (-14.1%)
+
+Signed-off-by: Rui Qi <qirui.001@bytedance.com>
+Reviewed-by: Dave Young <yangrr.2009@tsinghua.org.cn>
+---
+ symbols.c | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/symbols.c b/symbols.c
+index 03511c8cbe8c..a7ccdb101033 100644
+--- a/symbols.c
++++ b/symbols.c
+@@ -1085,12 +1085,16 @@ symbol_value_from_proc_kallsyms(char *symname)
+ 
+ /*
+  *  Install all static kernel symbol values into the symval_hash.
++ *  Uses a dynamically-allocated tails[] array for O(1) tail insertion.
+  */
+ static void
+ symval_hash_init(void)
+ {
+ 	int index;
+-	struct syment *sp, *sph;
++	struct syment *sp, **tails;
++
++	tails = (struct syment **)GETBUF(SYMVAL_HASH * sizeof(struct syment *));
++	BZERO(tails, SYMVAL_HASH * sizeof(struct syment *));
+ 
+         for (sp = st->symtable; sp < st->symend; sp++) {
+ 		index = SYMVAL_HASH_INDEX(sp->value);
+@@ -1098,15 +1102,12 @@ symval_hash_init(void)
+ 		if (st->symval_hash[index].val_hash_head == NULL) {
+ 			st->symval_hash[index].val_hash_head = sp;
+ 			st->symval_hash[index].val_hash_last = sp;
+-			continue;
+-		}
+-
+-		sph = st->symval_hash[index].val_hash_head; 
+-		while (sph->val_hash_next)
+-			sph = sph->val_hash_next;
+-				
+-		sph->val_hash_next = sp;
++		} else
++			tails[index]->val_hash_next = sp;
++		tails[index] = sp;
+ 	}
++
++	FREEBUF(tails);
+ }
+ 
+ /*
+-- 
+2.54.0
+

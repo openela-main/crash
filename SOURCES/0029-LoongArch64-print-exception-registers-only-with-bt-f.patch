@@ -1,0 +1,43 @@
+From 2946d9bfa656a59156c20641e743494c316b323c Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Tue, 16 Jun 2026 20:47:46 +0800
+Subject: [PATCH 29/39] LoongArch64: print exception registers only with bt -f
+
+LoongArch64 exception frames include a full pt_regs dump.  Printing that
+register block in normal bt output makes the backtrace harder to scan and
+visually separates the exception frame from the frames that follow it.
+
+Keep normal bt output focused on stack frames and print the exception
+register block only for full backtraces.  The detailed data remains
+available with bt -f, where crash already prints per-frame stack details.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index 34e29c9f2d67..39a05b854832 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -755,13 +755,12 @@ loongarch64_dump_backtrace_entry(struct bt_info *bt, struct syment *sym,
+ 			fprintf(fp, "    %s\n", buf);
+ 	}
+ 
+-	if (sym && loongarch64_is_exception_entry(sym)) {
+-		GET_STACK_DATA(current->sp, &pt_regs, SIZE(pt_regs));
+-		loongarch64_dump_exception_stack(bt, pt_regs);
+-	}
+-
+ 	/* bt -f */
+ 	if (bt->flags & BT_FULL) {
++		if (sym && loongarch64_is_exception_entry(sym)) {
++			GET_STACK_DATA(current->sp, &pt_regs, SIZE(pt_regs));
++			loongarch64_dump_exception_stack(bt, pt_regs);
++		}
+ 		fprintf(fp, "    "
+ 			"[PC: %016lx RA: %016lx SP: %016lx SIZE: %ld]\n",
+ 			current->pc, current->ra, current->sp,
+-- 
+2.54.0
+

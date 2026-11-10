@@ -1,0 +1,184 @@
+From 610e52023a425436d91168744dbb2ae047b63837 Mon Sep 17 00:00:00 2001
+From: Aaron Tomlin <atomlin@atomlin.com>
+Date: Sat, 4 Jul 2026 12:26:57 -0400
+Subject: [PATCH 33/39] task: Introduce -I option to ps command to exclude idle
+ tasks
+
+Adds a new option '-I' to the 'ps' command to filter out idle
+threads/tasks from the output. This filters out the idle tasks from the
+main ps list, CPU-specific block lists, and task time reports, while
+enforcing mutual exclusivity with the summary (-S) option.
+
+Signed-off-by: Aaron Tomlin <atomlin@atomlin.com>
+---
+ defs.h |  1 +
+ help.c |  3 ++-
+ task.c | 32 ++++++++++++++++++++++++--------
+ 3 files changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/defs.h b/defs.h
+index bdb4eb3e0980..ed91a5bc8e91 100644
+--- a/defs.h
++++ b/defs.h
+@@ -5403,6 +5403,7 @@ extern long _ZOMBIE_;
+ #define PS_SUMMARY    (0x40000)
+ #define PS_POLICY     (0x80000)
+ #define PS_ACTIVE    (0x100000)
++#define PS_EXCLUDE_IDLE    (0x200000)
+ 
+ #define PS_EXCLUSIVE (PS_TGID_LIST|PS_ARGV_ENVP|PS_TIMES|PS_CHILD_LIST|PS_PPID_LIST|PS_LAST_RUN|PS_RLIMIT|PS_MSECS|PS_SUMMARY|PS_ACTIVE)
+ 
+diff --git a/help.c b/help.c
+index 5cd5c30e99a3..c88797e8ae70 100644
+--- a/help.c
++++ b/help.c
+@@ -1392,7 +1392,7 @@ NULL
+ char *help_ps[] = {
+ "ps",
+ "display process status information",
+-"[-k|-u|-G|-y policy] [-s] [-p|-c|-t|-[l|m][-C cpu]|-a|-g|-r|-S|-A|-H]\n     [pid | task | command] ...",
++"[-k|-u|-G|-I|-y policy] [-s] [-p|-c|-t|-[l|m][-C cpu]|-a|-g|-r|-S|-A|-H]\n     [pid | task | command] ...",
+ "  This command displays process status for selected, or all, processes" ,
+ "  in the system.  If no arguments are entered, the process data is",
+ "  is displayed for all processes.  Specific processes may be selected",
+@@ -1409,6 +1409,7 @@ char *help_ps[] = {
+ "        -k  restrict the output to only kernel threads.",
+ "        -u  restrict the output to only user tasks.",
+ "        -G  display only the thread group leader in a thread group.",
++"        -I  exclude idle threads/tasks from the output.",
+ " -y policy  restrict the output to tasks having a specified scheduling policy",
+ "            expressed by its integer value or by its (case-insensitive) name;",
+ "            multiple policies may be entered in a comma-separated list:",
+diff --git a/task.c b/task.c
+index d7f3c129a709..25b929d791b3 100644
+--- a/task.c
++++ b/task.c
+@@ -107,8 +107,8 @@ static void foreach_cleanup(void *);
+ static void ps_cleanup(void *);
+ static char *task_pointer_string(struct task_context *, ulong, char *);
+ static int panic_context_adjusted(struct task_context *tc);
+-static void show_last_run(struct task_context *, struct psinfo *);
+-static void show_milliseconds(struct task_context *, struct psinfo *);
++static void show_last_run(ulong, struct task_context *, struct psinfo *);
++static void show_milliseconds(ulong, struct task_context *, struct psinfo *);
+ static char *translate_nanoseconds(ulonglong, char *);
+ static int sort_by_last_run(const void *arg1, const void *arg2);
+ static void sort_context_array_by_last_run(void);
+@@ -3534,7 +3534,7 @@ cmd_ps(void)
+ 	cpuspec = NULL;
+ 	flag = 0;
+ 
+-        while ((c = getopt(argcnt, args, "HASgstcpkuGlmarC:y:")) != EOF) {
++        while ((c = getopt(argcnt, args, "HAISgstcpkuGlmarC:y:")) != EOF) {
+                 switch(c)
+ 		{
+ 		case 'k':
+@@ -3645,6 +3645,10 @@ cmd_ps(void)
+ 			flag |= PS_ACTIVE;
+ 			break;
+ 
++		case 'I':
++			flag |= PS_EXCLUDE_IDLE;
++			break;
++
+ 		case 'H':
+ 			flag |= PS_NO_HEADER;
+ 			break;
+@@ -3794,6 +3798,8 @@ show_ps_data(ulong flag, struct task_context *tc, struct psinfo *psi)
+ 		return;
+ 	if ((flag & PS_POLICY) && !has_sched_policy(tc->task, psi->policy))
+ 		return;
++    if (tc && (flag & PS_EXCLUDE_IDLE) && is_idle_thread(tc->task))
++		return;
+ 	if (flag & PS_GROUP) {
+ 		if (flag & (PS_LAST_RUN|PS_MSECS))
+ 			error(FATAL, "-G not supported with -%c option\n",
+@@ -3827,11 +3833,11 @@ show_ps_data(ulong flag, struct task_context *tc, struct psinfo *psi)
+ 		return;
+ 	}
+ 	if (flag & (PS_LAST_RUN)) {
+-		show_last_run(tc, psi);
++		show_last_run(flag, tc, psi);
+ 		return;
+ 	}
+ 	if (flag & (PS_MSECS)) {
+-		show_milliseconds(tc, psi);
++		show_milliseconds(flag, tc, psi);
+ 		return;
+ 	}
+ 	if (flag & PS_ARGV_ENVP) {
+@@ -3988,7 +3994,7 @@ show_ps_summary(ulong flag)
+ 		char string[3];
+ 	} ps_state[MAX_STATES];
+ 
+-	if (flag & (PS_USER|PS_KERNEL|PS_GROUP))
++	if (flag & (PS_USER|PS_KERNEL|PS_GROUP|PS_EXCLUDE_IDLE))
+ 		error(FATAL, "-S option cannot be used with other options\n");
+ 
+ 	for (s = 0; s < MAX_STATES; s++)
+@@ -4023,7 +4029,7 @@ show_ps_summary(ulong flag)
+  *  current state.
+  */
+ static void
+-show_last_run(struct task_context *tc, struct psinfo *psi)
++show_last_run(ulong flag, struct task_context *tc, struct psinfo *psi)
+ {
+ 	int i, c, others;
+ 	struct task_context *tcp;
+@@ -4053,6 +4059,8 @@ show_last_run(struct task_context *tc, struct psinfo *psi)
+ 			for (i = 0; i < RUNNING_TASKS(); i++, tcp++) {
+ 				if (tcp->processor != c)
+ 					continue;
++				if ((flag & PS_EXCLUDE_IDLE) && is_idle_thread(tcp->task))
++					continue;
+ 				fprintf(fp, format, task_last_run(tcp->task));
+ 				fprintf(fp, "[%s]  ", 
+ 					task_state_string(tcp->task, buf, !VERBOSE));
+@@ -4066,6 +4074,8 @@ show_last_run(struct task_context *tc, struct psinfo *psi)
+ 	} else {
+ 		tcp = FIRST_CONTEXT();
+ 		for (i = 0; i < RUNNING_TASKS(); i++, tcp++) {
++			if ((flag & PS_EXCLUDE_IDLE) && is_idle_thread(tcp->task))
++				continue;
+ 			fprintf(fp, format, task_last_run(tcp->task));
+ 			fprintf(fp, "[%s]  ", task_state_string(tcp->task, buf, !VERBOSE));
+ 			print_task_header(fp, tcp, FALSE);
+@@ -4104,7 +4114,7 @@ translate_nanoseconds(ulonglong value, char *buf)
+  *  sched_info.last_arrival and its current state.
+  */
+ static void
+-show_milliseconds(struct task_context *tc, struct psinfo *psi)
++show_milliseconds(ulong flag, struct task_context *tc, struct psinfo *psi)
+ {
+ 	int i, c, others, days, max_days;
+ 	struct task_context *tcp;
+@@ -4154,6 +4164,8 @@ show_milliseconds(struct task_context *tc, struct psinfo *psi)
+ 			for (i = 0; i < RUNNING_TASKS(); i++, tcp++) {
+ 				if (tcp->processor != c)
+ 					continue;
++				if ((flag & PS_EXCLUDE_IDLE) && is_idle_thread(tcp->task))
++					continue;
+ 				delta = rq_clock - task_last_run(tcp->task);
+ 				if (delta < 0)
+ 					delta = 0;
+@@ -4188,6 +4200,8 @@ show_milliseconds(struct task_context *tc, struct psinfo *psi)
+ 	} else {
+ 		tcp = FIRST_CONTEXT();
+ 		for (i = 0; i < RUNNING_TASKS(); i++, tcp++) {
++			if ((flag & PS_EXCLUDE_IDLE) && is_idle_thread(tcp->task))
++				continue;
+ 			if ((kt->flags & SMP) && (kt->flags & PER_CPU_OFF))
+ 				runq = rq_sp->value + 
+ 					kt->__per_cpu_offset[tcp->processor];
+@@ -4562,6 +4576,8 @@ show_task_times(struct task_context *tcp, ulong flags)
+                         continue;
+                 if ((flags & PS_KERNEL) && !is_kernel_thread(tc->task))
+                         continue;
++                if ((flags & PS_EXCLUDE_IDLE) && is_idle_thread(tc->task))
++                        continue;
+ 		if (flags & PS_GROUP) {
+ 			tgid = task_tgid(tc->task);
+ 			if (tc->pid != tgid) {
+-- 
+2.54.0
+

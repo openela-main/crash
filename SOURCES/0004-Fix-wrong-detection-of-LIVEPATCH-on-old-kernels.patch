@@ -1,0 +1,39 @@
+From c0097c84fed048e3e073f73a72ec9f16f8232c4b Mon Sep 17 00:00:00 2001
+From: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date: Thu, 16 Apr 2026 04:35:42 +0000
+Subject: [PATCH 04/39] Fix wrong detection of "[LIVEPATCH]" on old kernels
+
+The crash-utility wrongly prints "[LIVEPATCH]" occasionally on old
+kernels:
+
+      KERNEL: vmlinux  [LIVEPATCH]
+    DUMPFILE: dump.d31  [PARTIAL DUMP]
+       ...
+     RELEASE: 2.6.24
+
+In is_livepatch(), show_kernel_tains() does not set any value to buf on
+kernels that have the "tainted" symbol, so it's printed when the
+uninitialized buf has "K" by chance.  On very old kernels, but this
+issue affects makedumpfile tests.
+
+Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+---
+ kernel.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel.c b/kernel.c
+index 8781d6a22414..1e639ec6a007 100644
+--- a/kernel.c
++++ b/kernel.c
+@@ -5678,7 +5678,7 @@ is_livepatch(void)
+ {
+ 	int i;
+ 	struct load_module *lm;
+-	char buf[BUFSIZE];
++	char buf[BUFSIZE] = {0};
+ 
+ 	show_kernel_taints(buf, !VERBOSE);
+ 	if (strstr(buf, "K"))  /* TAINT_LIVEPATCH */
+-- 
+2.54.0
+

@@ -1,0 +1,175 @@
+From 97b7c0a6085212ccb2dcc5e1b302906db6080d51 Mon Sep 17 00:00:00 2001
+From: Aaron Tomlin <atomlin@atomlin.com>
+Date: Sat, 4 Jul 2026 14:14:50 -0400
+Subject: [PATCH 34/39] task: Introduce -Y option to ps command to display
+ scheduling policy and priority
+
+Adds a new option '-Y' to the 'ps' command to print scheduling policy
+(e.g., NORMAL, FIFO, RR, etc.) and dynamic priority (prio) for each
+task.
+
+Signed-off-by: Aaron Tomlin <atomlin@atomlin.com>
+---
+ defs.h |  3 ++-
+ help.c |  3 ++-
+ task.c | 66 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 3 files changed, 68 insertions(+), 4 deletions(-)
+
+diff --git a/defs.h b/defs.h
+index ed91a5bc8e91..d7bcdd083671 100644
+--- a/defs.h
++++ b/defs.h
+@@ -5404,8 +5404,9 @@ extern long _ZOMBIE_;
+ #define PS_POLICY     (0x80000)
+ #define PS_ACTIVE    (0x100000)
+ #define PS_EXCLUDE_IDLE    (0x200000)
++#define PS_POLICY_DATA     (0x400000)
+ 
+-#define PS_EXCLUSIVE (PS_TGID_LIST|PS_ARGV_ENVP|PS_TIMES|PS_CHILD_LIST|PS_PPID_LIST|PS_LAST_RUN|PS_RLIMIT|PS_MSECS|PS_SUMMARY|PS_ACTIVE)
++#define PS_EXCLUSIVE (PS_TGID_LIST|PS_ARGV_ENVP|PS_TIMES|PS_CHILD_LIST|PS_PPID_LIST|PS_LAST_RUN|PS_RLIMIT|PS_MSECS|PS_SUMMARY|PS_ACTIVE|PS_POLICY_DATA)
+ 
+ #define MAX_PS_ARGS    (100)   /* maximum command-line specific requests */
+ 
+diff --git a/help.c b/help.c
+index c88797e8ae70..79bfa5ba0844 100644
+--- a/help.c
++++ b/help.c
+@@ -1392,7 +1392,7 @@ NULL
+ char *help_ps[] = {
+ "ps",
+ "display process status information",
+-"[-k|-u|-G|-I|-y policy] [-s] [-p|-c|-t|-[l|m][-C cpu]|-a|-g|-r|-S|-A|-H]\n     [pid | task | command] ...",
++"[-k|-u|-G|-I|-y policy] [-s] [-p|-c|-t|-[l|m][-C cpu]|-a|-g|-r|-S|-A|-H|-Y]\n     [pid | task | command] ...",
+ "  This command displays process status for selected, or all, processes" ,
+ "  in the system.  If no arguments are entered, the process data is",
+ "  is displayed for all processes.  Specific processes may be selected",
+@@ -1473,6 +1473,7 @@ char *help_ps[] = {
+ "       -S  display a summary consisting of the number of tasks in a task state.",
+ "       -A  display only the active task on each cpu.",
+ "       -H  display no header line.",
++"       -Y  display the task's scheduling policy and priority.",
+ "\nEXAMPLES",
+ "  Show the process status of all current tasks:\n",
+ "    %s> ps",
+diff --git a/task.c b/task.c
+index 25b929d791b3..7dacb05b2406 100644
+--- a/task.c
++++ b/task.c
+@@ -118,6 +118,8 @@ static void parse_task_thread(int argcnt, char *arglist[], struct task_context *
+ static void stack_overflow_check_init(void);
+ static int has_sched_policy(ulong, ulong);
+ static ulong task_policy(ulong);
++static const char *task_policy_name(ulong);
++static int task_prio(ulong);
+ static ulong sched_policy_bit_from_str(const char *);
+ static ulong make_sched_policy(const char *);
+ void crash_get_current_task_info(unsigned long *, char **);
+@@ -3534,7 +3536,7 @@ cmd_ps(void)
+ 	cpuspec = NULL;
+ 	flag = 0;
+ 
+-        while ((c = getopt(argcnt, args, "HAISgstcpkuGlmarC:y:")) != EOF) {
++        while ((c = getopt(argcnt, args, "HAISgstcpkuGlmarC:y:Y")) != EOF) {
+                 switch(c)
+ 		{
+ 		case 'k':
+@@ -3649,6 +3651,11 @@ cmd_ps(void)
+ 			flag |= PS_EXCLUDE_IDLE;
+ 			break;
+ 
++		case 'Y':
++			check_ps_exclusive(flag, PS_POLICY_DATA);
++			flag |= PS_POLICY_DATA;
++			break;
++
+ 		case 'H':
+ 			flag |= PS_NO_HEADER;
+ 			break;
+@@ -3822,6 +3829,31 @@ show_ps_data(ulong flag, struct task_context *tc, struct psinfo *psi)
+ 		}
+ 	}
+ 
++	if (flag & PS_POLICY_DATA) {
++		task_active = is_task_active(tc->task);
++
++		if (task_active) {
++			if (hide_offline_cpu(tc->processor))
++				fprintf(fp, "- ");
++			else
++				fprintf(fp, "> ");
++		} else
++			fprintf(fp, "  ");
++
++		fprintf(fp, "%7ld %7ld %3s  %s  %-12s %4d  ",
++			tc->pid, task_to_pid(tc->ptask),
++			task_cpu(tc->processor, buf2, !VERBOSE),
++			task_pointer_string(tc, flag & PS_KSTACKP, buf3),
++			task_policy_name(tc->task),
++			task_prio(tc->task));
++
++		if (is_kernel_thread(tc->task))
++			fprintf(fp, "[%s]\n", tc->comm);
++		else
++			fprintf(fp, "%s\n", tc->comm);
++		return;
++	}
++
+ 	if (flag & PS_PPID_LIST) {
+ 		parent_list(tc->task);
+ 		fprintf(fp, "\n");
+@@ -3902,6 +3934,14 @@ show_ps(ulong flag, struct psinfo *psi)
+ 			mkstring(buf, VADDR_PRLEN, CENTER|RJUST, "KSTACKP") :
+ 			mkstring(buf, VADDR_PRLEN, CENTER, "TASK"));
+ 
++	if ((flag & PS_POLICY_DATA) && !(flag & PS_NO_HEADER)) {
++		fprintf(fp,
++		    "      PID    PPID  CPU %s  POLICY       PRIO  COMM\n",
++			flag & PS_KSTACKP ?
++			mkstring(buf, VADDR_PRLEN, CENTER|RJUST, "KSTACKP") :
++			mkstring(buf, VADDR_PRLEN, CENTER, "TASK"));
++	}
++
+ 	if (flag & PS_SHOW_ALL) {
+ 
+ 		if (flag & PS_TIMES) {
+@@ -3994,7 +4034,7 @@ show_ps_summary(ulong flag)
+ 		char string[3];
+ 	} ps_state[MAX_STATES];
+ 
+-	if (flag & (PS_USER|PS_KERNEL|PS_GROUP|PS_EXCLUDE_IDLE))
++	if (flag & (PS_USER|PS_KERNEL|PS_GROUP|PS_EXCLUDE_IDLE|PS_POLICY_DATA))
+ 		error(FATAL, "-S option cannot be used with other options\n");
+ 
+ 	for (s = 0; s < MAX_STATES; s++)
+@@ -6050,6 +6090,28 @@ task_policy(ulong task)
+ 	return policy;
+ }
+ 
++static const char *
++task_policy_name(ulong task)
++{
++	ulong policy_bit = task_policy(task);
++	struct sched_policy_info *info;
++
++	for (info = sched_policy_info; info->name; info++) {
++		if (policy_bit == (1UL << info->value))
++			return info->name;
++	}
++	return "UNKNOWN";
++}
++
++static int
++task_prio(ulong task)
++{
++	fill_task_struct(task);
++	if (!tt->last_task_read || INVALID_MEMBER(task_struct_prio))
++		return 0;
++	return INT(tt->task_struct + OFFSET(task_struct_prio));
++}
++
+ /*
+  *  Return a task's tgid.
+  */
+-- 
+2.54.0
+

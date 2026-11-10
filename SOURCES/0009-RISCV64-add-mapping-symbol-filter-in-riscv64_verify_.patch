@@ -1,0 +1,76 @@
+From ad1e05f3d1ae96ce5862b2877db4bded9a9a6336 Mon Sep 17 00:00:00 2001
+From: Rui Qi <qirui.001@bytedance.com>
+Date: Wed, 6 May 2026 12:27:30 +0800
+Subject: [PATCH 09/39] RISCV64: add mapping symbol filter in
+ riscv64_verify_symbol
+
+Add mapping symbol filter in riscv64_verify_symbol() to filter out
+linker mapping symbols like '.L*', 'L0*' and '$*'. These symbols
+should not end up in the symbol list.
+
+Also optimize riscv64_verify_symbol() by consolidating name validity
+checks at the function entry.
+
+Changes:
+- riscv64.c: Add mapping symbol filter and optimize name checks
+- symbols.c: Add machine_type("RISCV64") to enable verify_symbol()
+  call in store_module_kallsyms_v2()
+
+Signed-off-by: Rui Qi <qirui.001@bytedance.com>
+---
+ riscv64.c | 14 +++++++++++---
+ symbols.c |  5 ++++-
+ 2 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/riscv64.c b/riscv64.c
+index 8c6aa9557ec5..f0783d570c7b 100644
+--- a/riscv64.c
++++ b/riscv64.c
+@@ -209,15 +209,23 @@ riscv64_cmd_mach(void)
+ static int
+ riscv64_verify_symbol(const char *name, ulong value, char type)
+ {
+-	if (CRASHDEBUG(8) && name && strlen(name))
++	if (!name || !strlen(name))
++		return FALSE;
++
++	if (CRASHDEBUG(8))
+ 		fprintf(fp, "%08lx %s\n", value, name);
+ 
++	/* Filter out mapping symbols */
++	if ((name[0] == '.' && name[1] == 'L') ||
++	    (name[0] == 'L' && name[1] == '0') ||
++	    (name[0] == '$'))
++		return FALSE;
++
+ 	if (!(machdep->flags & KSYMS_START)) {
+ 		if (STREQ(name, "_text") || STREQ(name, "_stext"))
+ 			machdep->flags |= KSYMS_START;
+ 
+-		return (name && strlen(name) && !STRNEQ(name, "__func__.") &&
+-			!STRNEQ(name, "__crc_"));
++		return (!STRNEQ(name, "__func__.") && !STRNEQ(name, "__crc_"));
+ 	}
+ 
+ 	return TRUE;
+diff --git a/symbols.c b/symbols.c
+index afdf4a61cea2..8eb8b37abc23 100644
+--- a/symbols.c
++++ b/symbols.c
+@@ -2990,9 +2990,12 @@ store_module_kallsyms_v2(struct load_module *lm, int start, int curr,
+ 		 * or '$x' for ARM64, and '$d'.
+ 		 * On LoongArch we have linker mapping symbols like '.L'
+ 		 * or 'L0'.
++		 * On RISCV64 we have linker mapping symbols like '.L',
++		 * 'L0' or '$'.
+ 		 * Make sure that these don't end up into our symbol list.
+ 		 */
+-		if ((machine_type("ARM") || machine_type("ARM64") || machine_type("LOONGARCH64")) &&
++		if ((machine_type("ARM") || machine_type("ARM64") || machine_type("LOONGARCH64") ||
++		     machine_type("RISCV64")) &&
+ 		    !machdep->verify_symbol(nameptr, ec->st_value, ec->st_info))
+ 			continue;
+ 
+-- 
+2.54.0
+

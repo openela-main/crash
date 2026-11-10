@@ -1,0 +1,32 @@
+From 4f66cea2487d511dbc9b7ff10a7e9fb98337273f Mon Sep 17 00:00:00 2001
+From: Rui Qi <qirui.001@bytedance.com>
+Date: Wed, 29 Apr 2026 14:13:25 +0800
+Subject: [PATCH 07/39] RISCV64: fix pmd address calculation in
+ riscv64_vtop_4level_4k
+
+Fix a bug in the PMD address calculation where the operator was
+incorrectly using '+' instead of '*'. This caused the PMD index
+to be added as an offset rather than multiplied by the entry size,
+resulting in incorrect page table traversal for 4-level 4KB paging.
+
+Signed-off-by: Rui Qi <qirui.001@bytedance.com>
+---
+ riscv64.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/riscv64.c b/riscv64.c
+index ff7b19eeb0d7..8c6aa9557ec5 100644
+--- a/riscv64.c
++++ b/riscv64.c
+@@ -1241,7 +1241,7 @@ riscv64_vtop_4level_4k(ulong *pgd, ulong vaddr, physaddr_t *paddr, int verbose)
+ 
+ 	/* PMD */
+ 	FILL_PMD(PAGEBASE(pmd_base), PHYSADDR, PAGESIZE());
+-	pmd_addr = pmd_base + sizeof(pmd_t) + pmd_index_l4_4k(vaddr);
++	pmd_addr = pmd_base + sizeof(pmd_t) * pmd_index_l4_4k(vaddr);
+ 	pmd_val = ULONG(machdep->pmd + PAGEOFFSET(pmd_addr));
+ 	if (verbose)
+ 		fprintf(fp, "  PMD: %016lx => %016lx\n", pmd_addr, pmd_val);
+-- 
+2.54.0
+

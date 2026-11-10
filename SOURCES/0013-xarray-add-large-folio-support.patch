@@ -1,0 +1,232 @@
+From 5d494e101bdd7d87add51d13bc1b42af8d8a151d Mon Sep 17 00:00:00 2001
+From: Huang Shijie <huangsj@hygon.cn>
+Date: Mon, 18 May 2026 19:31:39 +0800
+Subject: [PATCH 13/39] xarray: add large folio support
+
+We may meet a large folio at two cases:
+ 1.) when height is 1, the real data layout may looks like this:
+    --------------------------------------------
+	crash> p *(struct xa_node*)0xffff889883a6a910
+		$5 = {
+		  shift = 0 '\000',
+		  offset = 0 '\000',
+		  count = 64 '@',
+		  nr_values = 0 '\000',
+		  .................
+		  slots = { 0xffffea0061d21000, 0x2, 0x2, 0x2,
+			    0xffffea0121d85c00, 0x12, 0x12, 0x12,
+			    0xffffea0121d9f400, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
+			    0xffffea0121583800, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
+			    0xffffea0121833e00, 0x62, 0x62, 0x62, 0x62, 0x62, 0x62, 0x62,
+			    0xffffea0121eb3800, 0x82, 0x82, 0x82, 0x82, 0x82, 0x82, 0x82,
+			                        0x82, 0x82, 0x82, 0x82, 0x82, 0x82, 0x82,
+					       	0x82, 0x82, 0x82, 0x82, 0x82, 0x82, 0x82,
+					       	0x82, 0x82, 0x82, 0x82, 0x82, 0x82, 0x82,
+					       	0x82, 0x82, 0x82
+		           },
+		  .................
+		}
+    --------------------------------------------
+  The page orders for above folios:
+	0xffffea0061d21000 --> order 2
+	0xffffea0121d85c00 --> order 2
+	0xffffea0121d9f400 --> order 3
+	0xffffea0121583800 --> order 3
+	0xffffea0121833e00 --> order 3
+	0xffffea0121eb3800 --> order 5
+
+2.) when height is not 1, the real data layout may looks like this:
+    --------------------------------------------
+    slot: { 0xffff8a2c866b745a, 0xffff8a2c866b16d2, 0xfffff9fcc4ea4000, 0xfffff9fcc4eb9000, ..}
+    --------------------------------------------
+   The 0xffff8a2c866b745a and 0xffff8a2c866b16d2 is a internal node, not a folio.
+   The page orders for above folios:
+        0xfffff9fcc4ea4000 --> order 6
+
+Current code does not work correctly with large folio page cache.
+  This patch adds the large folio support with following:
+
+    1.) Add XARRAY_TYPE_PAGE_CACHE flag for do_xarray().
+    2.) Add update_count hook for do_xarray_info{},
+        add update_off hook for xarray_ops{}.
+    3.) changed the do_xarray_iter() to check the update_off
+        at proper place (height == 1 and height > 1).
+    4.) Implement the folio_update_count/folio_xarray_update_off
+        hooks for large folio page cache.
+
+Signed-off-by: Huang Shijie <huangsj@hygon.cn>
+---
+ defs.h    |  5 +++++
+ filesys.c | 51 ++++++++++++++++++++++++++++++++++++++++++++++-----
+ tools.c   | 15 +++++++++++++--
+ 3 files changed, 64 insertions(+), 7 deletions(-)
+
+diff --git a/defs.h b/defs.h
+index bd996ef38707..e7e97e7d80b2 100644
+--- a/defs.h
++++ b/defs.h
+@@ -5689,6 +5689,9 @@ int do_radix_tree_traverse(ulong ptr, int is_root, struct radix_tree_ops *ops);
+ struct xarray_ops {
+ 	void (*entry)(ulong node, ulong slot, const char *path,
+ 		      ulong index, void *private);
++	uint (*update_off)(ulong node, uint height, char *path, ulong index,
++                      ulong slot, uint off, ulong shift, struct xarray_ops *ops,
++		      bool *should_continue);
+ 	uint radix;
+ 	void *private;
+ };
+@@ -6003,6 +6006,8 @@ ulong do_xarray(ulong, int, struct list_pair *);
+ #define XARRAY_DUMP_CB (5)
+ #define XARRAY_TAG_MASK      (3UL)
+ #define XARRAY_TAG_INTERNAL  (2UL)
++#define XARRAY_TYPE_PAGE_CACHE	0x8
++extern ulong XA_CHUNK_SHIFT;
+ 
+ int folio_order(ulong folio);
+ 
+diff --git a/filesys.c b/filesys.c
+index 34944e2739aa..35d55a543739 100644
+--- a/filesys.c
++++ b/filesys.c
+@@ -2289,7 +2289,7 @@ dump_inode_page_cache_info(ulong inode)
+ 	if (root_rnode)
+ 		count = do_radix_tree(root_rnode, RADIX_TREE_DUMP_CB, &lp);
+ 	else if (xarray)
+-		count = do_xarray(xarray, XARRAY_DUMP_CB, &lp);
++		count = do_xarray(xarray, XARRAY_DUMP_CB | XARRAY_TYPE_PAGE_CACHE, &lp);
+ 
+ 	if (count != nrpages)
+ 		error(INFO, "%s page count: %ld  nrpages: %ld\n",
+@@ -4217,12 +4217,46 @@ struct do_xarray_info {
+ 	ulong maxcount;
+ 	ulong count;
+ 	void *data;
++	ulong (*update_count)(ulong);
+ };
++
++static ulong
++folio_update_count(ulong slot)
++{
++	return 1 << folio_order(slot);
++}
++
++static uint folio_xarray_update_off(ulong node, uint height, char *path, ulong index,
++       ulong slot, uint off, ulong shift, struct xarray_ops *ops, bool *should_continue)
++{
++	uint order;
++
++       *should_continue = false;
++
++	if (height == 1) {
++	       order = folio_order(slot) % XA_CHUNK_SHIFT;
++	       return 1 << order;
++	}
++
++	/* height > 1 */
++	if ((slot & XARRAY_TAG_MASK) == 0) {
++	       ops->entry(node, slot, path, index | off, ops->private);
++	       *should_continue = true;
++	       order = folio_order(slot) % XA_CHUNK_SHIFT;
++	       return 1 << order;
++	}
++	return 1;
++}
++
+ static void do_xarray_count(ulong node, ulong slot, const char *path,
+ 				ulong index, void *private)
+ {
+ 	struct do_xarray_info *info = private;
+-	info->count++;
++
++	if (info->update_count)
++		info->count += info->update_count(slot);
++	else
++		info->count++;
+ }
+ static void do_xarray_search(ulong node, ulong slot, const char *path,
+ 				 ulong index, void *private)
+@@ -4239,8 +4273,9 @@ static void do_xarray_dump(ulong node, ulong slot, const char *path,
+ 			       ulong index, void *private)
+ {
+ 	struct do_xarray_info *info = private;
++
+ 	fprintf(fp, "[%ld] %lx\n", index, slot);
+-	info->count++;
++	do_xarray_count(node, slot, path, index, private);
+ }
+ static void do_xarray_gather(ulong node, ulong slot, const char *path,
+ 				 ulong index, void *private)
+@@ -4274,7 +4309,8 @@ static void do_xarray_dump_cb(ulong node, ulong slot, const char *path,
+ 		      "operation failed: entry: %ld  item: %lx\n",
+ 		      info->count, slot);
+ 	}
+-	info->count++;
++
++	do_xarray_count(node, slot, path, index, private);
+ }
+ 
+ /*
+@@ -4318,7 +4354,12 @@ do_xarray(ulong root, int flag, struct list_pair *xp)
+ 		.private	= &info,
+ 	};
+ 
+-	switch (flag)
++	if (flag & XARRAY_TYPE_PAGE_CACHE) {
++		info.update_count = folio_update_count;
++		ops.update_off = folio_xarray_update_off;
++	}
++
++	switch (flag & 0x7)
+ 	{
+ 	case XARRAY_COUNT:
+ 		ops.entry = do_xarray_count;
+diff --git a/tools.c b/tools.c
+index 69250c48fa91..7dc11aedf56b 100644
+--- a/tools.c
++++ b/tools.c
+@@ -4728,7 +4728,7 @@ error_height:
+ 	return -1;
+ }
+ 
+-static ulong XA_CHUNK_SHIFT = UNINITIALIZED;
++ulong XA_CHUNK_SHIFT = UNINITIALIZED;
+ static ulong XA_CHUNK_SIZE = UNINITIALIZED;
+ static ulong XA_CHUNK_MASK = UNINITIALIZED;
+ 
+@@ -4737,21 +4737,32 @@ do_xarray_iter(ulong node, uint height, char *path,
+ 	       ulong index, struct xarray_ops *ops)
+ {
+ 	uint off;
++	uint update_off;
++	bool should_continue;
+ 
+ 	if (!hq_enter(node))
+ 		error(FATAL,
+ 			"\nduplicate tree node: %lx\n", node);
+ 
+-	for (off = 0; off < XA_CHUNK_SIZE; off++) {
++	for (off = 0; off < XA_CHUNK_SIZE; off += update_off) {
+ 		ulong slot;
+ 		ulong shift = (height - 1) * XA_CHUNK_SHIFT;
+ 
++		update_off = 1;
++
+ 		readmem(node + OFFSET(xa_node_slots) +
+ 			sizeof(void *) * off, KVADDR, &slot, sizeof(void *),
+ 			"xa_node.slots[off]", FAULT_ON_ERROR);
+ 		if (!slot)
+ 			continue;
+ 
++		if (ops->update_off) {
++			update_off = ops->update_off(node, height, path, index,
++				       slot, off, shift, ops, &should_continue);
++			if (should_continue)
++				continue;
++		}
++
+ 		if ((slot & XARRAY_TAG_MASK) == XARRAY_TAG_INTERNAL)
+ 			slot &= ~XARRAY_TAG_INTERNAL;
+ 
+-- 
+2.54.0
+

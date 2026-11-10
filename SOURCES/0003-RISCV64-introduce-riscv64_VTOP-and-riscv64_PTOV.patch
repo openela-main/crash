@@ -1,0 +1,91 @@
+From 4e4dc1c89310e4106f7d0da8029084124c5e016d Mon Sep 17 00:00:00 2001
+From: Austin Kim <austindh.kim@gmail.com>
+Date: Mon, 6 Apr 2026 13:53:37 +0900
+Subject: [PATCH 03/39] RISCV64: introduce riscv64_VTOP() and riscv64_PTOV()
+
+The VTOP and PTOV macros are typically implemented using architecture-specific
+functions to improve maintainability and debugging capabilities.
+
+This patch moves the RISCV64-specific VTOP/PTOV logic from inline macros
+in defs.h to dedicated functions in riscv64.c. This refactoring makes the
+code easier to understand and provides a better location for adding
+future debugging or validation checks.
+
+No functional changes are introduced by this patch.
+
+Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+---
+ defs.h    | 14 ++++----------
+ riscv64.c | 24 ++++++++++++++++++++++++
+ 2 files changed, 28 insertions(+), 10 deletions(-)
+
+diff --git a/defs.h b/defs.h
+index a6f43725b6b8..54f1725d089a 100644
+--- a/defs.h
++++ b/defs.h
+@@ -3803,16 +3803,8 @@ typedef signed int s32;
+ /*
+  * Direct memory mapping
+  */
+-#define PTOV(X) 									\
+-	(((unsigned long)(X)+(machdep->kvbase)) - machdep->machspec->phys_base)
+-#define VTOP(X) ({									\
+-	ulong _X = X;									\
+-	(THIS_KERNEL_VERSION >= LINUX(5,13,0) &&					\
+-		(_X) >= machdep->machspec->kernel_link_addr) ?				\
+-		((unsigned long)(_X)-(machdep->machspec->va_kernel_pa_offset)): 	\
+-		(((unsigned long)(_X)-(machdep->kvbase)) +				\
+-		 machdep->machspec->phys_base);						\
+-	})
++#define PTOV(X) riscv64_PTOV((ulong)(X))
++#define VTOP(X)	riscv64_VTOP((ulong)(X))
+ #define PAGEBASE(X)		(((ulong)(X)) & (ulong)machdep->pagemask)
+ 
+ /*
+@@ -7211,6 +7203,8 @@ void riscv64_display_regs_from_elf_notes(int, FILE *);
+ void riscv64_init(int);
+ void riscv64_dump_machdep_table(ulong);
+ int riscv64_IS_VMALLOC_ADDR(ulong);
++ulong riscv64_PTOV(ulong);
++ulong riscv64_VTOP(ulong);
+ 
+ #define display_idt_table() \
+ 	error(FATAL, "-d option is not applicable to RISCV64 architecture\n")
+diff --git a/riscv64.c b/riscv64.c
+index ee9d4e321f6b..ff7b19eeb0d7 100644
+--- a/riscv64.c
++++ b/riscv64.c
+@@ -1606,6 +1606,30 @@ riscv64_uvtop(struct task_context *tc, ulong uvaddr, physaddr_t *paddr, int verb
+ 	}
+ }
+ 
++ulong riscv64_PTOV(ulong paddr)
++{
++	ulong vaddr;
++	ulong offset = paddr - machdep->machspec->phys_base;
++
++	vaddr = offset + machdep->kvbase;
++
++	return vaddr;
++}
++
++ulong
++riscv64_VTOP(ulong addr)
++{
++	ulong paddr;
++
++	if ( (THIS_KERNEL_VERSION >= LINUX(5,13,0)) &&
++			(addr >= machdep->machspec->kernel_link_addr))
++		paddr = (addr - (machdep->machspec->va_kernel_pa_offset));
++	else
++		paddr = (addr - (ulong)machdep->kvbase + machdep->machspec->phys_base);
++
++	return paddr;
++}
++
+ static int
+ riscv64_kvtop(struct task_context *tc, ulong kvaddr, physaddr_t *paddr, int verbose)
+ {
+-- 
+2.54.0
+

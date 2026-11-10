@@ -1,0 +1,93 @@
+From f5ce0c39b5b414727f8c2d7491714a80f8ff4396 Mon Sep 17 00:00:00 2001
+From: Rui Qi <qirui.001@bytedance.com>
+Date: Mon, 22 Jun 2026 21:26:40 +0800
+Subject: [PATCH 31/39] riscv64: Guard verbose output in vtop page table walk
+ functions
+
+The riscv64_vtop_{3,4,5}level_4k() functions print "PAGE: not present"
+and "invalid for address" messages unconditionally, even when called
+with verbose=0. This produces noisy output during internal address
+translations such as kmem -p or dump_mem_map, where kvtop() is called
+non-verbosely to check whether a page struct is mapped.
+
+All other diagnostic output in these functions is already guarded by
+"if (verbose)". Move the not-present and no_page messages inside
+the verbose block to match.
+
+Also fix the 5-level function which used printf() instead of
+fprintf(fp, ...) for the !_PAGE_PRESENT debug message, and replace
+it with the same verbose-guarded format used by the 3-level and
+4-level functions.
+
+Signed-off-by: Rui Qi <qirui.001@bytedance.com>
+---
+ riscv64.c | 15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/riscv64.c b/riscv64.c
+index a43afbdcebd2..02210267862f 100644
+--- a/riscv64.c
++++ b/riscv64.c
+@@ -683,8 +683,8 @@ riscv64_vtop_3level_4k(ulong *pgd, ulong vaddr, physaddr_t *paddr, int verbose)
+ 		if (verbose) {
+ 			fprintf(fp, "\n");
+ 			riscv64_translate_pte((ulong)pte_val, 0, 0);
++			fprintf(fp, " PAGE: %016lx not present\n\n", PAGEBASE(*paddr));
+ 		}
+-		fprintf(fp, " PAGE: %016lx not present\n\n", PAGEBASE(*paddr));
+ 		return FALSE;
+ 	}
+ 
+@@ -697,7 +697,8 @@ riscv64_vtop_3level_4k(ulong *pgd, ulong vaddr, physaddr_t *paddr, int verbose)
+ 
+ 	return TRUE;
+ no_page:
+-	fprintf(fp, "invalid for %lx address\n", vaddr);
++	if (verbose)
++		fprintf(fp, "invalid for %lx address\n", vaddr);
+ 	return FALSE;
+ }
+ 
+@@ -1275,8 +1276,8 @@ riscv64_vtop_4level_4k(ulong *pgd, ulong vaddr, physaddr_t *paddr, int verbose)
+ 		if (verbose) {
+ 			fprintf(fp, "\n");
+ 			riscv64_translate_pte((ulong)pte_val, 0, 0);
++			fprintf(fp, " PAGE: %016lx not present\n\n", PAGEBASE(*paddr));
+ 		}
+-		fprintf(fp, " PAGE: %016lx not present\n\n", PAGEBASE(*paddr));
+ 		return FALSE;
+ 	}
+ 
+@@ -1289,7 +1290,8 @@ riscv64_vtop_4level_4k(ulong *pgd, ulong vaddr, physaddr_t *paddr, int verbose)
+ 
+ 	return TRUE;
+ no_page:
+-	fprintf(fp, "invalid for %lx address\n", vaddr);
++	if (verbose)
++		fprintf(fp, "invalid for %lx address\n", vaddr);
+ 	return FALSE;
+ }
+ 
+@@ -1364,8 +1366,8 @@ riscv64_vtop_5level_4k(ulong *pgd, ulong vaddr, physaddr_t *paddr, int verbose)
+ 		if (verbose) {
+ 			fprintf(fp, "\n");
+ 			riscv64_translate_pte((ulong)pte_val, 0, 0);
++			fprintf(fp, " PAGE: %016lx not present\n\n", PAGEBASE(*paddr));
+ 		}
+-		printf("!_PAGE_PRESENT\n");
+ 		return FALSE;
+ 	}
+ 
+@@ -1378,7 +1380,8 @@ riscv64_vtop_5level_4k(ulong *pgd, ulong vaddr, physaddr_t *paddr, int verbose)
+ 
+ 	return TRUE;
+ no_page:
+-	fprintf(fp, "invalid for %lx address\n", vaddr);
++	if (verbose)
++		fprintf(fp, "invalid for %lx address\n", vaddr);
+ 	return FALSE;
+ }
+ 
+-- 
+2.54.0
+

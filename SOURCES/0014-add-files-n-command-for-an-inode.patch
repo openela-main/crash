@@ -1,0 +1,216 @@
+From 28889183d3f55c581b0810aa8bdac31e20bbf364 Mon Sep 17 00:00:00 2001
+From: Huang Shijie <huangsj@hygon.cn>
+Date: Mon, 18 May 2026 19:31:40 +0800
+Subject: [PATCH 14/39] add "files -n" command for an inode
+
+In the NUMA machine, it is useful to know the memory distribution of
+an inode page cache:
+        How many pages in the node 0?
+        How many pages in the node 1?
+
+Add "files -n" command to get the memory distribution information:
+        1.) Add new argument for dump_inode_page_cache_info()
+        2.) make page_to_nid() a global function.
+        3.) Add summary_inode_page() to check each page's node
+            information.
+        4.) Use print_inode_summary_info() to print the
+            memory distribution information of an inode.
+
+Signed-off-by: Huang Shijie <huangsj@hygon.cn>
+---
+ defs.h    |  1 +
+ filesys.c | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++-----
+ help.c    | 24 +++++++++++++++++++++-
+ memory.c  |  4 ++--
+ 4 files changed, 81 insertions(+), 8 deletions(-)
+
+diff --git a/defs.h b/defs.h
+index e7e97e7d80b2..6373ee1831af 100644
+--- a/defs.h
++++ b/defs.h
+@@ -5948,6 +5948,7 @@ int dump_inode_page(ulong);
+ ulong valid_section_nr(ulong);
+ void display_memory_from_file_offset(ulonglong, long, void *);
+ void swap_info_init(void);
++int page_to_nid(ulong);
+ 
+ /*
+  *  filesys.c 
+diff --git a/filesys.c b/filesys.c
+index 35d55a543739..7ff47876bbb7 100644
+--- a/filesys.c
++++ b/filesys.c
+@@ -49,7 +49,7 @@ static int match_file_string(char *, char *, char *);
+ static ulong get_root_vfsmount(char *);
+ static void check_live_arch_mismatch(void);
+ static long get_inode_nrpages(ulong);
+-static void dump_inode_page_cache_info(ulong);
++static void dump_inode_page_cache_info(ulong, void *callback);
+ 
+ #define DENTRY_CACHE (20)
+ #define INODE_CACHE  (20)
+@@ -2240,8 +2240,38 @@ get_inode_nrpages(ulong i_mapping)
+ 	return nrpages;
+ }
+ 
++/* Used to collect the numa information for an inode */
++static ulong *numa_node;
++
+ static void
+-dump_inode_page_cache_info(ulong inode)
++print_inode_summary_info(void)
++{
++       int i;
++
++       fprintf(fp, "     NODE           PAGES\n");
++       for (i = 0; i < vt->numnodes; i++)
++               fprintf(fp, "     %2d          %8ld\n", i, numa_node[i]);
++}
++
++static int
++summary_inode_page(ulong page)
++{
++       int node;
++
++       if (!is_page_ptr(page, NULL))
++               error(FATAL, "Invalid inode page(0x%lx)\n", page);
++
++       node = page_to_nid(page);
++       if (node < 0 || node >= vt->numnodes)
++               error(FATAL, "Invalid node(%d) for page(0x%lx)\n", node, page);
++
++       numa_node[node] += 1 << folio_order(page);
++
++       return 1;
++}
++
++static void
++dump_inode_page_cache_info(ulong inode, void *callback)
+ {
+ 	char *inode_buf;
+ 	ulong i_mapping, nrpages, root_rnode, xarray, count;
+@@ -2284,7 +2314,7 @@ dump_inode_page_cache_info(ulong inode)
+ 		root_rnode = i_mapping + OFFSET(address_space_page_tree);
+ 
+ 	lp.index = 0;
+-	lp.value = (void *)&dump_inode_page;
++	lp.value = callback;
+ 
+ 	if (root_rnode)
+ 		count = do_radix_tree(root_rnode, RADIX_TREE_DUMP_CB, &lp);
+@@ -2324,7 +2354,7 @@ cmd_files(void)
+         ref = NULL;
+         refarg = NULL;
+ 
+-        while ((c = getopt(argcnt, args, "d:R:p:c")) != EOF) {
++        while ((c = getopt(argcnt, args, "d:n:R:p:c")) != EOF) {
+                 switch(c)
+ 		{
+ 		case 'R':
+@@ -2343,11 +2373,31 @@ cmd_files(void)
+ 			display_dentry_info(value);
+ 			return;
+ 
++                case 'n':
++                       if (VALID_MEMBER(address_space_page_tree) &&
++                           VALID_MEMBER(inode_i_mapping)) {
++                               value = htol(optarg, FAULT_ON_ERROR, NULL);
++
++                               /* Allocate the array for this inode */
++                               numa_node = (ulong *)GETBUF(sizeof(ulong) * vt->numnodes);
++                               BZERO(numa_node, sizeof(ulong) * vt->numnodes);
++
++                               dump_inode_page_cache_info(value, (void *)&summary_inode_page);
++
++                               /* Print out the NUMA node information for this inode */
++                               print_inode_summary_info();
++
++                               FREEBUF(numa_node);
++                               numa_node = NULL;
++                       } else
++                               option_not_supported('n');
++                       return;
++
+ 		case 'p':
+ 			if (VALID_MEMBER(address_space_page_tree) &&
+ 			    VALID_MEMBER(inode_i_mapping)) {
+ 				value = htol(optarg, FAULT_ON_ERROR, NULL);
+-				dump_inode_page_cache_info(value);
++				dump_inode_page_cache_info(value, (void *)&dump_inode_page);
+ 			} else
+ 				option_not_supported('p');
+ 			return;
+diff --git a/help.c b/help.c
+index 810075b97f35..5cd5c30e99a3 100644
+--- a/help.c
++++ b/help.c
+@@ -7900,7 +7900,7 @@ NULL
+ char *help_files[] = {
+ "files",
+ "open files",
+-"[-d dentry] | [-p inode] | [-c] [-R reference] [pid | taskp] ... ",
++"[-d dentry] | [-p inode] | [-n inode]|[-c] [-R reference] [pid | taskp] ... ",
+ "  This command displays information about open files of a context.",
+ "  It prints the context's current root directory and current working", 
+ "  directory, and then for each open file descriptor it prints a pointer",
+@@ -7915,6 +7915,8 @@ char *help_files[] = {
+ "                super block, file type, and full pathname.",
+ "     -p inode   given a hexadecimal inode address, dump all of its pages",
+ "                that are in the page cache.",
++"     -n inode   given a hexadecimal inode address, check all the pages",
++"                in the page cache, and display a NUMA node distribution.",
+ "     -c         for each open file descriptor, prints a pointer to its",
+ "                inode, a pointer to the inode's i_mapping address_space",
+ "                structure, the number of pages of the inode that are in",
+@@ -8024,6 +8026,26 @@ char *help_files[] = {
+ "    ca1ddde0  2eeef000  f59b91ac        3  2 82c referenced,uptodate,lru,private",
+ "    ca36b300  3b598000  f59b91ac        4  2 82c referenced,uptodate,lru,private",
+ "    ca202680  30134000  f59b91ac        5  2 82c referenced,uptodate,lru,private",
++"    ",
++"  For the inode at address ffff8898857c55a8, display the NUMA node",
++"  distribution of its pages that are in the page cache:",
++"    %s> files -n ffff8898857c55a8",
++"     INODE        NRPAGES",
++" ffff8898857c55a8    51748",
++"     ",
++"     NODE           PAGES",
++"      0             51536",
++"      1                 0",
++"      2                 0",
++"      3                 0",
++"      4                 0",
++"      5               212",
++"      6                 0",
++"      7                 0",
++"      8                 0",
++"      9                 0",
++"     10                 0",
++"     11                 0",
+ " ",
+ NULL               
+ };
+diff --git a/memory.c b/memory.c
+index 502f8fdd0ea7..38c6a139e984 100644
+--- a/memory.c
++++ b/memory.c
+@@ -301,7 +301,7 @@ static int dump_vm_event_state(void);
+ static int dump_page_states(void);
+ static int generic_read_dumpfile(ulonglong, void *, long, char *, ulong);
+ static int generic_write_dumpfile(ulonglong, void *, long, char *, ulong);
+-static int page_to_nid(ulong);
++int page_to_nid(ulong);
+ static int get_kmem_cache_list(ulong **);
+ static int get_kmem_cache_root_list(ulong **);
+ static int get_kmem_cache_child_list(ulong **, ulong);
+@@ -20093,7 +20093,7 @@ is_kmem_cache_addr_common(ulong vaddr, char *kbuf)
+ /*
+  *  Kernel-config-neutral page-to-node evaluator.
+  */
+-static int 
++int
+ page_to_nid(ulong page)
+ {
+         int i;
+-- 
+2.54.0
+

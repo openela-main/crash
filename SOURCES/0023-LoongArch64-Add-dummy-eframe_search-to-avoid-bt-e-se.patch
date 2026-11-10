@@ -1,0 +1,52 @@
+From 523981942d8962b5246efa5c92f52abfb0f62e86 Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Thu, 4 Jun 2026 19:52:44 +0800
+Subject: [PATCH 23/39] LoongArch64: Add dummy eframe_search to avoid bt -e
+ segfault
+
+The lack of machdep->eframe_search initialization causes the crash tool
+to segment fault when executing `bt -e`. Provide a stub function that
+returns a fatal error indicating the option is not supported, matching
+the behavior of other architectures that lack this feature.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index 9980b35bdff1..b0ebf8b1d99e 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -64,6 +64,7 @@ static void loongarch64_dump_backtrace_entry(struct bt_info *bt,
+ 			struct loongarch64_unwind_frame *previous, int level);
+ static void loongarch64_dump_exception_stack(struct bt_info *bt, char *pt_regs);
+ static int loongarch64_is_exception_entry(struct syment *sym);
++static int loongarch64_eframe_search(struct bt_info *bt);
+ static void loongarch64_display_full_frame(struct bt_info *bt,
+ 			struct loongarch64_unwind_frame *current,
+ 			struct loongarch64_unwind_frame *previous);
+@@ -1267,6 +1268,7 @@ loongarch64_init(int when)
+ 		machdep->kvtop = loongarch64_kvtop;
+ 		machdep->cmd_mach = loongarch64_cmd_mach;
+ 		machdep->back_trace = loongarch64_back_trace_cmd;
++		machdep->eframe_search = loongarch64_eframe_search;
+ 		machdep->get_stack_frame = loongarch64_get_stack_frame;
+ 		machdep->vmalloc_start = loongarch64_vmalloc_start;
+ 		machdep->processor_speed = loongarch64_processor_speed;
+@@ -1389,6 +1391,12 @@ loongarch64_display_regs_from_elf_notes(int cpu, FILE *ofp)
+ 		regs->csr_euen);
+ }
+ 
++static int
++loongarch64_eframe_search(struct bt_info *bt)
++{
++	return error(FATAL, "-e option not supported on this architecture\n");
++}
++
+ #else /* !LOONGARCH64 */
+ 
+ #include "defs.h"
+-- 
+2.54.0
+

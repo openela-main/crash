@@ -3,7 +3,7 @@
 #
 Summary: Kernel analysis utility for live systems, netdump, diskdump, kdump, LKCD or mcore dumpfiles
 Name: crash
-Version: 9.0.1
+Version: 9.0.2
 Release: 1%{?dist}
 License: GPL-3.0-only
 Source0: https://github.com/crash-utility/crash/archive/crash-%{version}.tar.gz
@@ -19,6 +19,44 @@ Provides: bundled(libiberty)
 Provides: bundled(gdb) = 16.2
 Patch0: lzo_snappy_zstd.patch
 Patch1: crash-9.0.0_build.patch
+Patch3: 0002-Mark-start-of-9.0.3-development-phase-with-version-9.patch
+Patch4: 0003-RISCV64-introduce-riscv64_VTOP-and-riscv64_PTOV.patch
+Patch5: 0004-Fix-wrong-detection-of-LIVEPATCH-on-old-kernels.patch
+Patch6: 0005-Fix-unwinding-with-32k-stacks-in-ppc64le.patch
+Patch7: 0006-arm64-fix-gdb-register-feeding-for-exception-frames-.patch
+Patch8: 0007-RISCV64-fix-pmd-address-calculation-in-riscv64_vtop_.patch
+Patch9: 0008-symbols-optimize-symname_hash-with-larger-table-and-.patch
+Patch10: 0009-RISCV64-add-mapping-symbol-filter-in-riscv64_verify_.patch
+Patch11: 0010-Fix-get_xtime-for-kernel-6.13-and-higher.patch
+Patch12: 0011-symbols-Add-support-for-mod-symtab-with-combined-GPL.patch
+Patch13: 0012-add-folio_order-function.patch
+Patch14: 0013-xarray-add-large-folio-support.patch
+Patch15: 0014-add-files-n-command-for-an-inode.patch
+Patch16: 0015-x86_64-Fix-bt-command-for-noreturn-functions.patch
+Patch17: 0016-x86_64-Fix-bt-command-to-use-correct-ORC-register-va.patch
+Patch18: 0017-Fix-kmem-i-option-to-display-swap-usage-on-Linux-6.1.patch
+Patch19: 0018-Fix-swap-command-on-Linux-7.1-and-later.patch
+Patch20: 0019-LoongArch64-Fix-CPU-registers-reading-from-dump-note.patch
+Patch21: 0020-LoongArch64-Fix-pt_regs-initialization-for-active-ta.patch
+Patch22: 0021-LoongArch64-Support-backtracing-across-exception-bou.patch
+Patch23: 0022-LoongArch64-Fix-stack-frame-loop-bounds-for-exceptio.patch
+Patch24: 0023-LoongArch64-Add-dummy-eframe_search-to-avoid-bt-e-se.patch
+Patch25: 0024-LoongArch64-print-exception-return-address-as-ERA.patch
+Patch26: 0025-LoongArch64-resolve-relocated-exception-vector-addre.patch
+Patch27: 0026-LoongArch64-add-initial-ORC-unwinder-support.patch
+Patch28: 0027-LoongArch64-unwind-dumpfile-active-tasks-from-IRQ-st.patch
+Patch29: 0028-LoongArch64-avoid-replacing-a-valid-RA-with-stack-no.patch
+Patch30: 0029-LoongArch64-print-exception-registers-only-with-bt-f.patch
+Patch31: 0030-riscv64-Set-VMEMMAP-flag-to-fix-spurious-mem_map-war.patch
+Patch32: 0031-riscv64-Guard-verbose-output-in-vtop-page-table-walk.patch
+Patch33: 0032-riscv64-Add-get_kvaddr_ranges-callback-for-kernel-ad.patch
+Patch34: 0033-task-Introduce-I-option-to-ps-command-to-exclude-idl.patch
+Patch35: 0034-task-Introduce-Y-option-to-ps-command-to-display-sch.patch
+Patch36: 0035-Fix-failure-of-runq-g-option-on-Linux-7.2-and-later-.patch
+Patch37: 0036-Fix-runq-g-option-to-display-task_group-name-on-Linu.patch
+Patch38: 0037-x86_64-Make-ORC_REG_SP-and-ORC_REG_PREV_SP-independe.patch
+Patch39: 0038-symbols-optimize-symval_hash_init-with-O-1-tail-inse.patch
+Patch40: 0039-Prevent-out-of-bounds-access-of-note_buf.patch
 
 %description
 The core analysis suite is a self-contained tool that can be used to
@@ -40,6 +78,44 @@ offered by Mission Critical Linux, or the LKCD kernel patch.
 %setup -n %{name}-%{version} -q
 %patch -P 0 -p1 -b lzo_snappy_zstd.patch
 %patch -P 1 -p1
+%patch -P 3 -p1
+%patch -P 4 -p1
+%patch -P 5 -p1
+%patch -P 6 -p1
+%patch -P 7 -p1
+%patch -P 8 -p1
+%patch -P 9 -p1
+%patch -P 10 -p1
+%patch -P 11 -p1
+%patch -P 12 -p1
+%patch -P 13 -p1
+%patch -P 14 -p1
+%patch -P 15 -p1
+%patch -P 16 -p1
+%patch -P 17 -p1
+%patch -P 18 -p1
+%patch -P 19 -p1
+%patch -P 20 -p1
+%patch -P 21 -p1
+%patch -P 22 -p1
+%patch -P 23 -p1
+%patch -P 24 -p1
+%patch -P 25 -p1
+%patch -P 26 -p1
+%patch -P 27 -p1
+%patch -P 28 -p1
+%patch -P 29 -p1
+%patch -P 30 -p1
+%patch -P 31 -p1
+%patch -P 32 -p1
+%patch -P 33 -p1
+%patch -P 34 -p1
+%patch -P 35 -p1
+%patch -P 36 -p1
+%patch -P 37 -p1
+%patch -P 38 -p1
+%patch -P 39 -p1
+%patch -P 40 -p1
 
 %build
 
@@ -65,6 +141,9 @@ cp -p defs.h %{buildroot}%{_includedir}/crash
 %{_includedir}/*
 
 %changelog
+* Tue Aug 11 2026 Tao Liu <ltao@redhat.com> - 9.0.1-2
+- Rebase to upstream crash 9.0.2
+
 * Mon Nov 24 2025 Tao Liu <ltao@redhat.com> - 9.0.1-1
 - Rebase to upstream crash 9.0.1
 

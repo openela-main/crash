@@ -1,0 +1,55 @@
+From f6084e0dbf363d3d27075b3f3a193a9ae37c1df5 Mon Sep 17 00:00:00 2001
+From: Rui Qi <qirui.001@bytedance.com>
+Date: Mon, 22 Jun 2026 21:26:39 +0800
+Subject: [PATCH 30/39] riscv64: Set VMEMMAP flag to fix spurious mem_map[]
+ warnings
+
+RISC-V kernels use CONFIG_SPARSEMEM_VMEMMAP, and the crash utility
+correctly reads VMEMMAP_START/VMEMMAP_END from VMCOREINFO. However,
+riscv64.c never sets the VMEMMAP flag on machdep->flags, unlike arm64
+and x86_64 which always set it.
+
+This causes fill_mem_map_cache() in memory.c to emit spurious warnings
+when it fails to read page structs from vmemmap holes:
+
+  WARNING: mem_map[] from ffff8d8002470000 to ffff8d8002471000 not accessible
+
+With SPARSEMEM_VMEMMAP, unmapped holes in the vmemmap region are
+expected -- a mem_section that has no corresponding physical memory
+simply has no page struct mapped. The VMEMMAP flag tells crash that
+such read failures are normal, suppressing the inappropriate warnings.
+
+Set VMEMMAP in the PRE_GDB stage when vmemmap_vaddr is valid, and
+display the flag in riscv64_dump_machdep_table() for debugging.
+
+Signed-off-by: Rui Qi <qirui.001@bytedance.com>
+---
+ riscv64.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/riscv64.c b/riscv64.c
+index f0783d570c7b..a43afbdcebd2 100644
+--- a/riscv64.c
++++ b/riscv64.c
+@@ -244,6 +244,8 @@ riscv64_dump_machdep_table(ulong arg)
+ 		fprintf(fp, "%sIRQ_STACKS", others++ ? "|" : "");
+ 	if (machdep->flags & OVERFLOW_STACKS)
+ 		fprintf(fp, "%sOVERFLOW_STACKS", others++ ? "|" : "");
++	if (machdep->flags & VMEMMAP)
++		fprintf(fp, "%sVMEMMAP", others++ ? "|" : "");
+ 	fprintf(fp, ")\n");
+ 
+ 	fprintf(fp, "             kvbase: %lx\n", machdep->kvbase);
+@@ -1749,6 +1751,9 @@ riscv64_init(int when)
+ 		machdep->show_interrupts = generic_show_interrupts;
+ 		machdep->get_irq_affinity = generic_get_irq_affinity;
+ 		machdep->init_kernel_pgd = NULL; /* pgd set by symbol_value("swapper_pg_dir") */
++
++		if (machdep->machspec->vmemmap_vaddr)
++			machdep->flags |= VMEMMAP;
+ 		break;
+ 
+ 	case POST_GDB:
+-- 
+2.54.0
+

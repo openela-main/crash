@@ -1,0 +1,41 @@
+From 40145cc1f001e7eedff7753377fb8e4b9e8787f7 Mon Sep 17 00:00:00 2001
+From: Ming Wang <wangming01@loongson.cn>
+Date: Thu, 4 Jun 2026 19:52:43 +0800
+Subject: [PATCH 22/39] LoongArch64: Fix stack frame loop bounds for exception
+ frames
+
+Remove the incorrect -32 padding from stacktop limits in loongarch64.c.
+In modern LoongArch64 kernels, pt_regs rests exactly at the top of the
+stack, and this -32 padding forces the backtrace loop to terminate
+prematurely before reaching the exception frame.
+
+Signed-off-by: Ming Wang <wangming01@loongson.cn>
+---
+ loongarch64.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/loongarch64.c b/loongarch64.c
+index 3ec184c908f8..9980b35bdff1 100644
+--- a/loongarch64.c
++++ b/loongarch64.c
+@@ -461,7 +461,7 @@ loongarch64_back_trace_cmd(struct bt_info *bt)
+ 		previous.pc = current.ra = regs->regs[LOONGARCH64_EF_RA];
+ 	}
+ 
+-	while (current.sp <= bt->stacktop - 32 - SIZE(pt_regs)) {
++	while (current.sp <= bt->stacktop - SIZE(pt_regs)) {
+ 		struct syment *symbol = NULL;
+ 		ulong offset;
+ 
+@@ -501,7 +501,7 @@ loongarch64_back_trace_cmd(struct bt_info *bt)
+ 		 *    * ret_from_kernel_thread
+ 		 */
+ 		if (symbol && !STRNEQ(symbol->name, "ret_from") && !offset &&
+-			!current.ra && current.sp < bt->stacktop - 32 - SIZE(pt_regs)) {
++			!current.ra && current.sp < bt->stacktop - SIZE(pt_regs)) {
+ 			if (CRASHDEBUG(8))
+ 				fprintf(fp, "zero offset at %s, try previous symbol\n",
+ 					symbol->name);
+-- 
+2.54.0
+

@@ -1,0 +1,202 @@
+From 744dfa3a190d3dd2b1cc42d3378a1cb299958c0a Mon Sep 17 00:00:00 2001
+From: Huang Shijie <huangsj@hygon.cn>
+Date: Mon, 18 May 2026 19:31:38 +0800
+Subject: [PATCH 12/39] add folio_order function
+
+The folio_order() has three versions:
+   1.) In verion 1, folio_order() uses page[1].compound_order to
+       get the folio order. We use "folio_batch" as the indicator.
+
+       Please refer to patch set:
+       https://lore.kernel.org/all/20211208042256.1923824-1-willy@infradead.org/
+
+   2.) In version 2, the following patch introduces _folio_order:
+       c3a15bff46cb5149 "mm: reimplement folio_order() and folio_nr_pages()"
+       We use "_folio_order" as the indicator.
+
+       Please refer to patch set:
+       https://lore.kernel.org/all/20220808193430.3378317-1-willy@infradead.org/
+
+   3.) In version 3, the following patch replaces the _folio_order with _flags_1:
+       ebc1baf5c9b46c22 "mm: free up a word in the first tail page"
+       folio_order() uses _flags_1 to get the folio order.
+
+       We use "free_huge_folio" as the indicator.
+       Please refer to patch set:
+       https://lore.kernel.org/linux-mm/20230816151201.3655946-1-willy@infradead.org/
+       (Note, we do not use the struct modifications within the patch set as the indicator,
+	since they have been removed in later kernel.)
+
+This patch will be used in later patches.
+
+Signed-off-by: Huang Shijie <huangsj@hygon.cn>
+---
+ defs.h    |  8 ++++++
+ memory.c  | 79 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ symbols.c |  6 +++++
+ 3 files changed, 93 insertions(+)
+
+diff --git a/defs.h b/defs.h
+index 89044b18cdbe..bd996ef38707 100644
+--- a/defs.h
++++ b/defs.h
+@@ -2291,6 +2291,9 @@ struct offset_table {                    /* stash of commonly-used offsets */
+ 	long hrtimer_clock_base_index;
+ 	long klp_patch_list;
+ 	long tk_data_timekeeper;
++	long page_compound_order;
++	long folio__folio_order;
++	long folio__flags_1;
+ };
+ 
+ struct size_table {         /* stash of commonly-used sizes */
+@@ -2470,6 +2473,9 @@ struct size_table {         /* stash of commonly-used sizes */
+ 	long cpumask_t;
+ 	long task_struct_exit_state;
+ 	long bpf_ringbuf_map;
++	long page_compound_order;
++	long folio__folio_order;
++	long folio__flags_1;
+ };
+ 
+ struct array_table {
+@@ -5998,6 +6004,8 @@ ulong do_xarray(ulong, int, struct list_pair *);
+ #define XARRAY_TAG_MASK      (3UL)
+ #define XARRAY_TAG_INTERNAL  (2UL)
+ 
++int folio_order(ulong folio);
++
+ int file_dump(ulong, ulong, ulong, int, int);
+ #define DUMP_FULL_NAME      0x1
+ #define DUMP_INODE_ONLY     0x2
+diff --git a/memory.c b/memory.c
+index 17423a588464..502f8fdd0ea7 100644
+--- a/memory.c
++++ b/memory.c
+@@ -410,6 +410,10 @@ mem_init(void)
+         DISPLAY_DEFAULT = (sizeof(long) == 8) ? DISPLAY_64 : DISPLAY_32;
+ }
+ 
++#define FOLIO_ORDER_V1	1
++#define FOLIO_ORDER_V2	2
++#define FOLIO_ORDER_V3	3
++static int folio_order_version;
+ 
+ /*
+  *  Stash a few popular offsets and some basic kernel virtual memory
+@@ -547,6 +551,37 @@ vm_init(void)
+ 	MEMBER_OFFSET_INIT(page_freelist, "page", "freelist");
+ 	MEMBER_OFFSET_INIT(page_page_type, "page", "page_type");
+ 
++	/*
++	 * The "folio_batch" was introduced at patch set:
++	 * https://lore.kernel.org/all/20211208042256.1923824-1-willy@infradead.org/
++	 * Use it as the indicator for folio_order() version 1.
++	 */
++	if (STRUCT_EXISTS("folio_batch"))
++		folio_order_version = FOLIO_ORDER_V1;
++
++	MEMBER_OFFSET_INIT(page_compound_order, "page", "compound_order");
++	MEMBER_SIZE_INIT(page_compound_order, "page", "compound_order");
++
++	/*
++	 * The "_folio_order" was introduced at patch set:
++	 * https://lore.kernel.org/all/20220808193430.3378317-1-willy@infradead.org/
++	 * Use it as the indicator for folio_order() version 2.
++	 */
++	MEMBER_SIZE_INIT(folio__folio_order, "folio", "_folio_order");
++	MEMBER_OFFSET_INIT(folio__folio_order, "folio", "_folio_order");
++	if (VALID_MEMBER(folio__folio_order))
++		folio_order_version = FOLIO_ORDER_V2;
++
++	/*
++	 * The "free_huge_folio()" was introduced at patch set:
++	 * https://lore.kernel.org/linux-mm/20230816151201.3655946-1-willy@infradead.org/
++	 * Use it as the indicator for folio_order() version 3.
++	 */
++	MEMBER_OFFSET_INIT(folio__flags_1, "folio", "_flags_1");
++	MEMBER_SIZE_INIT(folio__flags_1, "folio", "_flags_1");
++	if (kernel_symbol_exists("free_huge_folio"))
++		folio_order_version = FOLIO_ORDER_V3;
++
+ 	MEMBER_OFFSET_INIT(mm_struct_pgd, "mm_struct", "pgd");
+ 
+ 	MEMBER_OFFSET_INIT(swap_info_struct_swap_file,
+@@ -20426,6 +20461,50 @@ static unsigned int oo_objects(ulong oo)
+         return (oo & ((1 << 16) - 1));
+ }
+ 
++int
++folio_order(ulong folio)
++{
++	ulong v = 0;
++	int PG_head = 16;
++
++	if (folio_order_version == FOLIO_ORDER_V1) {
++		readmem(folio + OFFSET(page_flags), KVADDR, &v, sizeof(ulong),
++				"folio.page.flags", FAULT_ON_ERROR);
++		if (!(v & (1 << PG_head)))
++			return 0;
++
++		readmem(folio + SIZE(page) + OFFSET(page_compound_order), KVADDR, &v,
++			SIZE(page_compound_order), "page[1].compound_order", FAULT_ON_ERROR);
++
++		return v;
++	} else if (folio_order_version == FOLIO_ORDER_V2) {
++		readmem(folio + OFFSET(page_flags), KVADDR, &v, sizeof(ulong),
++				"folio.page.flags", FAULT_ON_ERROR);
++		if (!(v & (1 << PG_head)))
++			return 0;
++
++		readmem(folio + OFFSET(folio__folio_order), KVADDR, &v,
++			SIZE(folio__folio_order), "folio->_folio_order", FAULT_ON_ERROR);
++
++		return v;
++	} else if (folio_order_version == FOLIO_ORDER_V3) {
++		/* The PG_head changes to bit 6 in this version */
++		PG_head = 6;
++
++		readmem(folio + OFFSET(page_flags), KVADDR, &v, sizeof(ulong),
++				"folio.page.flags", FAULT_ON_ERROR);
++		if (!(v & (1 << PG_head)))
++			return 0;
++
++		readmem(folio + OFFSET(folio__flags_1), KVADDR, &v,
++			SIZE(folio__flags_1), "folio->_flags_1", FAULT_ON_ERROR);
++
++		return v & 0xff;
++	} else {
++		return 0;
++	}
++}
++
+ #ifdef NOT_USED
+ ulong
+ slab_to_kmem_cache_node(struct meminfo *si, ulong slab_page)
+diff --git a/symbols.c b/symbols.c
+index 3c62f54d4a93..c0285058c5cb 100644
+--- a/symbols.c
++++ b/symbols.c
+@@ -10462,6 +10462,9 @@ dump_offset_table(char *spec, ulong makestruct)
+         fprintf(fp, "                  page_private: %ld\n", OFFSET(page_private));
+ 	fprintf(fp, "                page_page_type: %ld\n",
+ 		OFFSET(page_page_type));
++	fprintf(fp, "                page_compound_order: %ld\n", OFFSET(page_compound_order));
++	fprintf(fp, "                folio__folio_order: %ld\n", OFFSET(folio__folio_order));
++	fprintf(fp, "                folio__flags_1: %ld\n", OFFSET(folio__flags_1));
+ 
+ 	fprintf(fp, "        trace_print_flags_mask: %ld\n",
+ 		OFFSET(trace_print_flags_mask));
+@@ -11972,6 +11975,9 @@ dump_offset_table(char *spec, ulong makestruct)
+ 	fprintf(fp, "\n                    size_table:\n");
+ 	fprintf(fp, "                          page: %ld\n", SIZE(page));
+ 	fprintf(fp, "                    page_flags: %ld\n", SIZE(page_flags));
++	fprintf(fp, "           page_compound_order: %ld\n", SIZE(page_compound_order));
++	fprintf(fp, "            folio__folio_order: %ld\n", SIZE(folio__folio_order));
++	fprintf(fp, "                folio__flags_1: %ld\n", SIZE(folio__flags_1));
+ 	fprintf(fp, "             trace_print_flags: %ld\n", SIZE(trace_print_flags));
+         fprintf(fp, "              free_area_struct: %ld\n", 
+ 		SIZE(free_area_struct));
+-- 
+2.54.0
+
